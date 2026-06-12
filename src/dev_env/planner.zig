@@ -123,10 +123,10 @@ fn requireNewest(
     paths: paths_mod.Paths,
 ) !client.Installer {
     return (try client.newestCompatible(installers, host)) orelse {
-            std.log.err(
-                "no compatible installer for {f} under {s}",
-                .{ host, paths.installers },
-            );
+        std.log.err(
+            "no compatible installer for {f} under {s}",
+            .{ host, paths.installers },
+        );
         return error.NoCompatibleInstaller;
     };
 }

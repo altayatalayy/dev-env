@@ -1,24 +1,22 @@
 # syntax=docker/dockerfile:1.7
+# Fedora release builder: compiles the dev-env binaries and (for source-built
+# tools) runs the compile-from-source flow, so it carries build toolchains.
 
-FROM ubuntu:24.04
+FROM fedora:42
 
-ARG DEBIAN_FRONTEND=noninteractive
 ARG ZIG_VERSION=0.16.0
 ARG ZIG_ARCH=x86_64
 
 ENV LANG=C.UTF-8
 ENV PATH=/opt/zig:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN rm -f /etc/apt/apt.conf.d/docker-clean
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && \
-    apt-get install --yes --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/libdnf5,sharing=locked \
+    dnf install --assumeyes \
         bash \
         ca-certificates \
         curl \
         tar \
-        xz-utils \
+        xz \
         zstd
 
 RUN curl --fail --location --show-error \
@@ -30,6 +28,5 @@ RUN curl --fail --location --show-error \
 
 WORKDIR /src
 COPY . .
-COPY build-release.sh /opt/dev-env-test/build-release.sh
 
-ENTRYPOINT ["bash", "/opt/dev-env-test/build-release.sh"]
+ENTRYPOINT ["bash", "/src/release/build-release.sh"]

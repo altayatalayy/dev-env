@@ -8,6 +8,7 @@ const paths_mod = @import("paths.zig");
 const host_detect = @import("host_detect.zig");
 const planner = @import("planner.zig");
 const apply_mod = @import("apply.zig");
+const build_mod = @import("build.zig");
 const uninstall_mod = @import("uninstall.zig");
 const clean_mod = @import("clean.zig");
 const receipt_mod = @import("receipt.zig");
@@ -59,6 +60,7 @@ fn run(init: std.process.Init) !void {
             cli.applyPlannerOptions(options, .newest),
             options.policy,
         ),
+        .build => |options| try build_mod.run(alloc, io, paths, options),
         .doctor => try runDoctor(alloc, io, paths),
         .uninstall => |options| try uninstall_mod.run(alloc, io, paths, options.policy),
         .clean => try clean_mod.run(alloc, io, paths),
@@ -167,6 +169,7 @@ test {
     _ = @import("cli.zig");
     _ = @import("planner.zig");
     _ = @import("apply.zig");
+    _ = @import("build.zig");
     _ = @import("configs.zig");
     _ = @import("stow.zig");
     _ = @import("receipt.zig");

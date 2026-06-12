@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Runs inside a builder container. Compiles the dev-env binaries with the real
+# dotfiles embedded and publishes release assets plus latest.json under
+# /build/releases so a server can serve them to targets.
 
 SOURCE_DIR="/src"
 BUILD_DIR="/build"
@@ -14,7 +17,8 @@ if ! cd "${SOURCE_DIR}"; then
     exit 1
 fi
 
-if ! zig build -Drelease="${RELEASE}" -Ddotfiles-dir=test/dotfiles; then
+# Default dotfiles-dir is the real dotfiles/ tree; never embed test fixtures.
+if ! zig build -Drelease="${RELEASE}"; then
     echo "zig build failed in builder container" >&2
     exit 1
 fi

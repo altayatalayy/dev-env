@@ -11,9 +11,14 @@ pub const usage =
     \\  plan [options]              write lock.json and show the pending diff
     \\  apply [options]             apply lock.json (creates a default lock if missing)
     \\  upgrade [options]           move to the newest compatible installer and apply
+    \\  build [options]             source-build tools into release archives
     \\  doctor                      check host, state, and installed tools
     \\  uninstall [options]         remove managed tools, configs, and state
     \\  clean                       remove inactive tool versions and old state
+    \\
+    \\build options:
+    \\  --release-root <dir>        directory to write archives and source-builds.json
+    \\  --tool <name>               build only this tool (repeatable)
     \\
     \\plan options:
     \\  --installer <release>       lock a specific installer release
@@ -31,6 +36,7 @@ pub const Command = union(enum) {
     plan: Plan,
     apply: Apply,
     upgrade: Apply,
+    build: Build,
     doctor,
     uninstall: Apply,
     clean,
@@ -41,6 +47,15 @@ pub const Command = union(enum) {
         tools: ?[]const []const u8 = null,
         add: []const []const u8 = &.{},
         remove: []const []const u8 = &.{},
+    };
+
+    /// `dev-env build` always auto-detects the host platform/version/arch; it
+    /// deliberately rejects --platform/--platform-version/--arch so builders
+    /// cannot claim to produce artifacts for a host they are not running on.
+    pub const Build = struct {
+        release_root: ?[]const u8 = null,
+        installer_path: ?[]const u8 = null,
+        tools: []const []const u8 = &.{},
     };
 
     pub const Apply = struct {
@@ -64,6 +79,9 @@ pub fn parse(alloc: std.mem.Allocator, args: []const []const u8) Error!Command {
     }
     if (std.mem.eql(u8, command, "upgrade")) {
         return .{ .upgrade = try parseApply(rest) };
+    }
+    if (std.mem.eql(u8, command, "build")) {
+        return .{ .build = try parseBuild(alloc, rest) };
     }
     if (std.mem.eql(u8, command, "doctor")) {
         try expectNoArgs(command, rest);
@@ -174,6 +192,33 @@ fn parseApply(args: []const []const u8) Error!Command.Apply {
     return apply;
 }
 
+fn parseBuild(alloc: std.mem.Allocator, args: []const []const u8) Error!Command.Build {
+    var build: Command.Build = .{};
+    var tools: std.ArrayList([]const u8) = .empty;
+
+    var index: usize = 0;
+    while (index < args.len) {
+        const flag = try nextFlag(args, &index);
+        if (std.mem.eql(u8, flag.name, "--release-root")) {
+            build.release_root = try flagValue(flag, args, &index);
+        } else if (std.mem.eql(u8, flag.name, "--installer-path")) {
+            build.installer_path = try absolutePathOption(flag, args, &index);
+        } else if (std.mem.eql(u8, flag.name, "--tool")) {
+            try tools.append(alloc, try flagValue(flag, args, &index));
+        } else if (std.mem.eql(u8, flag.name, "--platform") or
+            std.mem.eql(u8, flag.name, "--platform-version") or
+            std.mem.eql(u8, flag.name, "--arch"))
+        {
+            return fail("{s} is not allowed: build always targets the host it runs on", .{flag.name});
+        } else {
+            return fail("unknown build option: {s}", .{flag.name});
+        }
+    }
+
+    build.tools = tools.items;
+    return build;
+}
+
 fn absolutePathOption(flag: Flag, args: []const []const u8, index: *usize) Error![]const u8 {
     const value = try flagValue(flag, args, index);
     if (!std.fs.path.isAbsolute(value)) return fail("{s} requires an absolute path", .{flag.name});
@@ -282,6 +327,49 @@ test "parse plan flags" {
 
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "plan", "--tools" }));
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "plan", "--bogus=1" }));
+}
+
+test "parse build flags" {
+    const old_log_level = testing.log_level;
+    testing.log_level = .err;
+    defer testing.log_level = old_log_level;
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const build = (try parse(alloc, &.{
+        "build",
+        "--release-root",
+        "build/releases/download/v0.1.0",
+        "--tool",
+        "tmux",
+        "--tool=git",
+    })).build;
+
+    try testing.expectEqualStrings("build/releases/download/v0.1.0", build.release_root.?);
+    try testing.expectEqual(@as(usize, 2), build.tools.len);
+    try testing.expectEqualStrings("tmux", build.tools[0]);
+    try testing.expectEqualStrings("git", build.tools[1]);
+
+    // No tools means "all source-buildable tools".
+    const all = (try parse(alloc, &.{ "build", "--release-root", "out" })).build;
+    try testing.expectEqual(@as(usize, 0), all.tools.len);
+}
+
+test "build rejects platform overrides" {
+    const old_log_level = testing.log_level;
+    testing.log_level = .err;
+    defer testing.log_level = old_log_level;
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "build", "--platform", "ubuntu" }));
+    try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "build", "--platform-version", "24.04" }));
+    try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "build", "--arch", "x86_64" }));
+    try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "build", "--bogus" }));
 }
 
 test "parse installer path flags" {
