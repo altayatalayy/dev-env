@@ -1,0 +1,9 @@
+.git
+.zig-cache
+zig-cache
+zig-out
+
+.agents
+.claude
+.codex
+

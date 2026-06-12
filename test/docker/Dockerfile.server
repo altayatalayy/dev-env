@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1.7
+
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV LANG=C.UTF-8
+
+RUN rm -f /etc/apt/apt.conf.d/docker-clean
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && \
+    apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        python3
+
+COPY build/releases /srv/releases
+
+WORKDIR /srv
+EXPOSE 8000
+
+CMD ["python3", "-m", "http.server", "8000", "--bind", "0.0.0.0", "--directory", "/srv"]

@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+
+FROM fedora:42
+
+ARG TEST_UID=1000
+ARG TEST_GID=1000
+
+ENV LANG=C.UTF-8
+ENV HOME=/home/devtest
+ENV XDG_CACHE_HOME=/home/devtest/.cache
+ENV XDG_DATA_HOME=/home/devtest/.local/share
+ENV PATH=/opt/dev-env/bin:/home/devtest/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN --mount=type=cache,target=/var/cache/dnf,sharing=locked \
+    dnf install --assumeyes --setopt=keepcache=True \
+        bash \
+        ca-certificates \
+        coreutils \
+        curl \
+        findutils \
+        grep \
+        shadow-utils \
+        sudo \
+        stow
+
+COPY build/bin/dev-env /opt/dev-env/bin/dev-env
+COPY build/bin/dev-env-install /opt/dev-env/bin/dev-env-install
+COPY install.sh /opt/dev-env-test/install.sh
+COPY test/integration /opt/dev-env-test/integration
+
+RUN if getent group "${TEST_GID}" >/dev/null; then \
+        TEST_GROUP="$(getent group "${TEST_GID}" | cut --delimiter=: --fields=1)"; \
+    else \
+        groupadd --gid "${TEST_GID}" devtest; \
+        TEST_GROUP=devtest; \
+    fi && \
+    if getent passwd "${TEST_UID}" >/dev/null; then \
+        TEST_USER="$(getent passwd "${TEST_UID}" | cut --delimiter=: --fields=1)"; \
+    else \
+        useradd \
+            --uid "${TEST_UID}" \
+            --gid "${TEST_GROUP}" \
+            --home-dir /home/devtest \
+            --create-home \
+            --shell /bin/bash \
+            devtest; \
+        TEST_USER=devtest; \
+    fi && \
+    mkdir --parents /home/devtest && \
+    chown "${TEST_UID}:${TEST_GID}" /home/devtest && \
+    echo "${TEST_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devtest && \
+    chmod 0440 /etc/sudoers.d/devtest
+
+USER ${TEST_UID}:${TEST_GID}
+WORKDIR /tmp
+
+CMD ["bash", "/opt/dev-env-test/integration/smoke.sh"]
