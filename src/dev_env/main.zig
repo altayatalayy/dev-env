@@ -120,14 +120,17 @@ fn runDoctor(
             .platform = r.platform,
             .tools = try r.toolNames(alloc),
         });
+        var failed = false;
         for (verify.results) |result| {
             if (result.ok) {
                 std.log.info("verify {s}: {s}", .{ result.tool, result.detail });
             } else {
                 std.log.err("verify {s}: {s}", .{ result.tool, result.detail });
+                failed = true;
             }
         }
         try checkStowState(alloc, io, paths, r);
+        if (failed) return error.VerificationFailed;
     } else {
         std.log.warn("installed.json missing", .{});
     }

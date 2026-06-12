@@ -20,12 +20,12 @@ fn isInstalled(alloc: std.mem.Allocator, io: std.Io, package: []const u8) bool {
     return runner.succeeded(result.term) and std.mem.eql(u8, result.stdout, "installed");
 }
 
-pub fn ensureInstalled(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8) !void {
+pub fn ensureInstalled(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8) ![]const []const u8 {
     var missing: std.ArrayList([]const u8) = .empty;
     for (packages) |package| {
         if (!isInstalled(alloc, io, package)) try missing.append(alloc, package);
     }
-    if (missing.items.len == 0) return;
+    if (missing.items.len == 0) return &.{};
 
     const package_list = try std.mem.join(alloc, " ", missing.items);
     defer alloc.free(package_list);
@@ -37,6 +37,8 @@ pub fn ensureInstalled(alloc: std.mem.Allocator, io: std.Io, packages: []const [
         missing.items,
     });
     try aptGet(alloc, io, install_args);
+
+    return try missing.toOwnedSlice(alloc);
 }
 
 fn aptGet(alloc: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
@@ -47,7 +49,7 @@ fn aptGet(alloc: std.mem.Allocator, io: std.Io, args: []const []const u8) !void 
         &.{ "sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get" };
     const argv = try std.mem.concat(alloc, []const u8, &.{ prefix, args });
 
-    const term = try runner.runInherit(io, argv);
+    const term = try runner.runQuietUnlessFailed(alloc, io, argv);
     if (!runner.succeeded(term)) {
         std.log.err("apt-get {s} failed", .{args[0]});
         return error.AptFailed;

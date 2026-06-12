@@ -8,6 +8,7 @@
 //! dependency-first so toolchains exist before the builds that need them.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const shared = @import("shared");
 const proto = shared.protocol;
 const platform = shared.platform;
@@ -64,7 +65,7 @@ pub fn apply(
             }),
             .archive => |a| try installed.append(
                 alloc,
-                try installArchive(alloc, io, env.layout, req.platform.fields().arch, name, a),
+                try installArchive(alloc, io, env.layout, req.platform.fields().arch, progress, name, a),
             ),
             .source => |s| try installed.append(
                 alloc,
@@ -189,6 +190,7 @@ fn installArchive(
     io: std.Io,
     layout: layout_mod.Layout,
     arch: platform.Arch,
+    progress: ?*progress_mod.Progress,
     name: []const u8,
     archive: tools.Archive,
 ) !proto.InstalledTool {
@@ -196,8 +198,14 @@ fn installArchive(
 
     const dest = try layout.versionDir(alloc, name, archive.version);
     if (!exists(io, dest)) {
+        if (progress) |p| try p.emit(.{ .event = "step_started", .tool = name, .detail = "download archive" });
         const archive_path = try download(alloc, io, layout.cache_dir, source.url);
+        if (progress) |p| try p.emit(.{ .event = "step_finished", .tool = name, .detail = "download archive" });
+        if (progress) |p| try p.emit(.{ .event = "step_started", .tool = name, .detail = "extract archive" });
         try extractTo(alloc, io, archive_path, source.format, source.strip_components, dest);
+        if (progress) |p| try p.emit(.{ .event = "step_finished", .tool = name, .detail = "extract archive" });
+    } else if (progress) |p| {
+        try p.emit(.{ .event = "step_skipped", .tool = name, .detail = "archive already installed" });
     }
 
     return .{
@@ -226,7 +234,7 @@ fn activateBinLinks(
             std.log.err("missing executable after install: {s}", .{target});
             return error.BrokenInstall;
         }
-        try replaceSymlink(io, target, link_path);
+        try replaceSymlink(alloc, io, layout, target, link_path);
         try links.append(alloc, link_path);
     }
     return links.items;
@@ -252,16 +260,60 @@ fn deactivateBinLinks(
     }
 }
 
-fn replaceSymlink(io: std.Io, target: []const u8, link_path: []const u8) !void {
+fn replaceSymlink(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    layout: layout_mod.Layout,
+    target: []const u8,
+    link_path: []const u8,
+) !void {
     const cwd = std.Io.Dir.cwd();
     if (std.fs.path.dirname(link_path)) |parent| {
         try cwd.createDirPath(io, parent);
     }
-    std.Io.Dir.deleteFileAbsolute(io, link_path) catch |err| switch (err) {
-        error.FileNotFound => {},
+
+    const stat = cwd.statFile(io, link_path, .{ .follow_symlinks = false }) catch |err| switch (err) {
+        error.FileNotFound => {
+            try std.Io.Dir.symLinkAbsolute(io, target, link_path, .{});
+            return;
+        },
         else => return err,
     };
+
+    if (stat.kind != .sym_link) {
+        if (!builtin.is_test) {
+            std.log.err("executable link conflict: {s} already exists", .{link_path});
+        }
+        return error.ExecutableConflict;
+    }
+
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try std.Io.Dir.readLinkAbsolute(io, link_path, &buffer);
+    const resolved = try resolveLinkTarget(alloc, link_path, buffer[0..len]);
+    if (!isManagedExecutable(resolved, layout.opt)) {
+        if (!builtin.is_test) {
+            std.log.err("executable link conflict: {s} points to {s}", .{ link_path, resolved });
+        }
+        return error.ExecutableConflict;
+    }
+
+    try std.Io.Dir.deleteFileAbsolute(io, link_path);
     try std.Io.Dir.symLinkAbsolute(io, target, link_path, .{});
+}
+
+fn resolveLinkTarget(
+    alloc: std.mem.Allocator,
+    link_path: []const u8,
+    link_value: []const u8,
+) ![]const u8 {
+    if (std.fs.path.isAbsolute(link_value)) return std.fs.path.resolve(alloc, &.{link_value});
+    const dir = std.fs.path.dirname(link_path) orelse "/";
+    return std.fs.path.resolve(alloc, &.{ dir, link_value });
+}
+
+fn isManagedExecutable(resolved: []const u8, opt_root: []const u8) bool {
+    return std.mem.startsWith(u8, resolved, opt_root) and
+        (resolved.len == opt_root.len or resolved[opt_root.len] == '/');
 }
 
 /// Downloads `url` into the cache directory unless already present; returns
@@ -415,4 +467,68 @@ test "apply installs system tools dependency-first" {
     for (resp.tools) |tool| {
         try std.testing.expectEqual(proto.ToolKind.system, tool.kind);
     }
+}
+
+test "replaceSymlink only replaces managed executable links" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
+    const layout = try layout_mod.Layout.init(alloc, home, try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}));
+
+    const old_target = try std.fmt.allocPrint(alloc, "{s}/tmux/old/bin/tmux", .{layout.opt});
+    const new_target = try std.fmt.allocPrint(alloc, "{s}/tmux/new/bin/tmux", .{layout.opt});
+    if (std.fs.path.dirname(old_target)) |parent| try cwd.createDirPath(io, parent);
+    if (std.fs.path.dirname(new_target)) |parent| try cwd.createDirPath(io, parent);
+    {
+        const file = try std.Io.Dir.createFileAbsolute(io, old_target, .{});
+        file.close(io);
+    }
+    {
+        const file = try std.Io.Dir.createFileAbsolute(io, new_target, .{});
+        file.close(io);
+    }
+
+    const link = try layout.binLink(alloc, "tmux");
+    if (std.fs.path.dirname(link)) |parent| try cwd.createDirPath(io, parent);
+    try std.Io.Dir.symLinkAbsolute(io, old_target, link, .{});
+    try replaceSymlink(alloc, io, layout, new_target, link);
+
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try std.Io.Dir.readLinkAbsolute(io, link, &buffer);
+    try std.testing.expectEqualStrings(new_target, buffer[0..len]);
+}
+
+test "replaceSymlink refuses foreign executable path" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
+    const layout = try layout_mod.Layout.init(alloc, home, try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}));
+
+    const target = try std.fmt.allocPrint(alloc, "{s}/tmux/new/bin/tmux", .{layout.opt});
+    if (std.fs.path.dirname(target)) |parent| try cwd.createDirPath(io, parent);
+    {
+        const file = try std.Io.Dir.createFileAbsolute(io, target, .{});
+        file.close(io);
+    }
+
+    const link = try layout.binLink(alloc, "tmux");
+    if (std.fs.path.dirname(link)) |parent| try cwd.createDirPath(io, parent);
+    {
+        const file = try std.Io.Dir.createFileAbsolute(io, link, .{});
+        file.close(io);
+    }
+
+    try std.testing.expectError(error.ExecutableConflict, replaceSymlink(alloc, io, layout, target, link));
 }

@@ -5,67 +5,86 @@ if [ $? -ne 0 ]; then
     echo "failed to locate integration script directory" >&2
     exit 1
 fi
-
 if ! . "${SCRIPT_DIR}/common.sh"; then
     echo "failed to load integration helpers" >&2
     exit 1
 fi
 
-if ! dev_env_require_binaries; then
-    exit 1
-fi
+if ! dev_env_require_binaries; then exit 1; fi
 
-if ! dev_env_prepare_state config-conflicts; then
-    exit 1
-fi
+prepare_case() {
+    if ! dev_env_prepare_state "config-conflicts-$1"; then return 1; fi
+    if ! dev_env_install_fake_release 0.1.0; then return 1; fi
+    if ! "${DEV_ENV}" plan --installer 0.1.0 --tools tmux; then
+        echo "plan failed for config conflict case $1" >&2
+        return 1
+    fi
+}
 
-if ! dev_env_install_release; then
-    exit 1
-fi
-
-if ! "${DEV_ENV}" plan --installer "${RELEASE}" --tools tmux; then
-    echo "dev-env plan failed for config conflict test" >&2
-    exit 1
-fi
-
-if ! mkdir --parents "${HOME}/.config/tmux"; then
-    echo "failed to create tmux config directory" >&2
-    exit 1
-fi
-
-if ! printf '%s\n' "local tmux config" > "${HOME}/.config/tmux/tmux.conf"; then
-    echo "failed to create local tmux conflict" >&2
-    exit 1
-fi
-
+if ! prepare_case fail-file; then exit 1; fi
+if ! mkdir --parents "${HOME}/.config/tmux"; then exit 1; fi
+if ! printf '%s\n' "local tmux config" > "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi
 if "${DEV_ENV}" apply --config-conflict=fail; then
-    echo "config conflict did not fail with fail policy" >&2
+    echo "file conflict did not fail with fail policy" >&2
+    exit 1
+fi
+if ! grep --fixed-strings "local tmux config" "${HOME}/.config/tmux/tmux.conf" >/dev/null; then
+    echo "fail policy changed the local file" >&2
+    exit 1
+fi
+if test -f "${XDG_DATA_HOME}/dev-env/installed.json"; then
+    echo "fail policy wrote installed.json" >&2
     exit 1
 fi
 
-if ! test -f "${HOME}/.config/tmux/tmux.conf"; then
-    echo "fail policy removed the local tmux config" >&2
-    exit 1
-fi
-
+if ! prepare_case backup-file; then exit 1; fi
+if ! mkdir --parents "${HOME}/.config/tmux"; then exit 1; fi
+if ! printf '%s\n' "local tmux config" > "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi
 if ! "${DEV_ENV}" apply --config-conflict=backup; then
-    echo "backup policy did not resolve the config conflict" >&2
+    echo "backup policy failed" >&2
     exit 1
 fi
-
 if ! find "${XDG_DATA_HOME}/dev-env/backups" -type f -path '*/home/.config/tmux/tmux.conf' | grep . >/dev/null; then
-    echo "backup policy did not record the conflicting tmux config" >&2
+    echo "backup policy did not save the local file" >&2
+    exit 1
+fi
+if ! test -f "${HOME}/.config/tmux/tmux.conf"; then
+    echo "backup policy did not stow the config" >&2
+    exit 1
+fi
+# A managed symlink must not be treated as a conflict on the next apply.
+if ! "${DEV_ENV}" apply --config-conflict=fail; then
+    echo "managed symlink was treated as a conflict" >&2
     exit 1
 fi
 
-if ! test -L "${HOME}/.config/tmux/tmux.conf"; then
-    echo "tmux config was not stowed after backup policy" >&2
+if ! prepare_case skip-file; then exit 1; fi
+if ! mkdir --parents "${HOME}/.config/tmux"; then exit 1; fi
+if ! printf '%s\n' "local tmux config" > "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi
+if ! "${DEV_ENV}" apply --config-conflict=skip; then
+    echo "skip policy failed" >&2
+    exit 1
+fi
+if ! grep --fixed-strings "local tmux config" "${HOME}/.config/tmux/tmux.conf" >/dev/null; then
+    echo "skip policy changed the local file" >&2
+    exit 1
+fi
+if ! dev_env_json_assert contains "${XDG_DATA_HOME}/dev-env/installed.json" skipped_configs tmux-config; then exit 1; fi
+
+if ! prepare_case fail-dir; then exit 1; fi
+if ! mkdir --parents "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi
+if "${DEV_ENV}" apply --config-conflict=fail; then
+    echo "directory conflict did not fail" >&2
     exit 1
 fi
 
-if ! grep --extended-regexp '"configs"[[:space:]]*:' "${XDG_DATA_HOME}/dev-env/installed.json" >/dev/null; then
-    echo "installed.json did not record configs" >&2
+if ! prepare_case fail-symlink; then exit 1; fi
+if ! mkdir --parents "${HOME}/.config/tmux"; then exit 1; fi
+if ! printf '%s\n' "foreign" > "${TEST_HOME}/foreign-tmux.conf"; then exit 1; fi
+if ! ln --symbolic "${TEST_HOME}/foreign-tmux.conf" "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi
+if "${DEV_ENV}" apply --config-conflict=fail; then
+    echo "foreign symlink conflict did not fail" >&2
     exit 1
 fi
 
-echo "config conflict integration tests passed"
+echo "config-conflicts integration tests passed"

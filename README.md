@@ -6,18 +6,21 @@ Install on a target machine from a release server:
 curl --fail --location --show-error http://server/releases/install.sh | bash -s -- --release-root-url http://server/releases
 ```
 
-Build release artifacts (Ubuntu or Fedora builder):
+Build all release artifacts:
 
 ```sh
-release/build.sh ubuntu
-release/build.sh fedora
+release/build.sh
 ```
 
-Run the tests:
+Run the normal test matrix. This builds the Zig unit/component tests once, builds the native x86_64 Linux binaries, then runs the fast integration suite against the supported amd64 Linux targets: Ubuntu 24.04, Ubuntu 26.04, and Fedora 44.
 
 ```sh
-zig build test                              # unit/component tests
-tests/scripts/run.sh --suite integration
-tests/scripts/run.sh --suite e2e --target ubuntu
-tests/scripts/run.sh --suite e2e --target fedora
+test/scripts/test-container.sh
+```
+
+Run only selected targets or the heavier e2e suite:
+
+```sh
+TEST_TARGETS="ubuntu-24.04-x86_64 fedora-44-x86_64" test/scripts/test-container.sh
+test/scripts/test-container.sh /opt/dev-env-test/e2e/run.sh
 ```

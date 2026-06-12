@@ -220,18 +220,26 @@ fn exec(
 }
 
 fn displayProgress(event: proto.ProgressEvent) void {
-    if (event.tool) |tool| {
-        if (event.detail) |detail| {
-            std.log.info("{s}: {s} ({s})", .{ event.event, tool, detail });
-        } else {
-            std.log.info("{s}: {s}", .{ event.event, tool });
-        }
-    } else if (event.config) |config| {
-        if (event.detail) |detail| {
-            std.log.info("{s}: {s} ({s})", .{ event.event, config, detail });
-        } else {
-            std.log.info("{s}: {s}", .{ event.event, config });
-        }
+    const subject = event.tool orelse event.config orelse event.detail orelse "";
+
+    if (std.mem.eql(u8, event.event, "install_started")) {
+        std.log.info("installing {s}", .{subject});
+    } else if (std.mem.eql(u8, event.event, "install_finished")) {
+        std.log.info("installed {s}", .{subject});
+    } else if (std.mem.eql(u8, event.event, "build_started")) {
+        std.log.info("building {s} {s}", .{ subject, event.detail orelse "" });
+    } else if (std.mem.eql(u8, event.event, "build_finished")) {
+        std.log.info("built {s} {s}", .{ subject, event.detail orelse "" });
+    } else if (std.mem.eql(u8, event.event, "step_started")) {
+        std.log.info("{s}: {s}", .{ subject, event.detail orelse "step" });
+    } else if (std.mem.eql(u8, event.event, "step_finished")) {
+        std.log.info("{s}: finished {s}", .{ subject, event.detail orelse "step" });
+    } else if (std.mem.eql(u8, event.event, "step_skipped")) {
+        std.log.info("{s}: skipped {s}", .{ subject, event.detail orelse "step" });
+    } else if (std.mem.eql(u8, event.event, "config_apply_started")) {
+        std.log.info("applying config {s}", .{subject});
+    } else if (std.mem.eql(u8, event.event, "config_apply_finished")) {
+        std.log.info("applied config {s}", .{subject});
     } else if (event.tools.len > 0) {
         std.log.info("{s}: {d} tools", .{ event.event, event.tools.len });
     } else if (event.packages.len > 0) {

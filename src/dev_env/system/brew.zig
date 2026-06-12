@@ -20,17 +20,19 @@ pub fn ensureInstalled(
     io: std.Io,
     formulas: []const []const u8,
     casks: []const []const u8,
-) !void {
-    try install(alloc, io, formulas, false);
-    try install(alloc, io, casks, true);
+) ![]const []const u8 {
+    var installed: std.ArrayList([]const u8) = .empty;
+    try installed.appendSlice(alloc, try install(alloc, io, formulas, false));
+    try installed.appendSlice(alloc, try install(alloc, io, casks, true));
+    return installed.items;
 }
 
-fn install(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8, cask: bool) !void {
+fn install(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8, cask: bool) ![]const []const u8 {
     var missing: std.ArrayList([]const u8) = .empty;
     for (packages) |package| {
         if (!isInstalled(alloc, io, package, cask)) try missing.append(alloc, package);
     }
-    if (missing.items.len == 0) return;
+    if (missing.items.len == 0) return &.{};
 
     const prefix: []const []const u8 = if (cask)
         &.{ "brew", "install", "--cask" }
@@ -38,9 +40,11 @@ fn install(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8, c
         &.{ "brew", "install" };
     const argv = try std.mem.concat(alloc, []const u8, &.{ prefix, missing.items });
 
-    const term = try runner.runInherit(io, argv);
+    const term = try runner.runQuietUnlessFailed(alloc, io, argv);
     if (!runner.succeeded(term)) {
         std.log.err("brew install failed", .{});
         return error.BrewFailed;
     }
+
+    return try missing.toOwnedSlice(alloc);
 }

@@ -20,13 +20,12 @@ fn isInstalled(alloc: std.mem.Allocator, io: std.Io, package: []const u8) bool {
     return runner.succeeded(result.term);
 }
 
-pub fn ensureInstalled(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8) !void {
+pub fn ensureInstalled(alloc: std.mem.Allocator, io: std.Io, packages: []const []const u8) ![]const []const u8 {
     var missing: std.ArrayList([]const u8) = .empty;
-    defer missing.deinit(alloc);
     for (packages) |package| {
         if (!isInstalled(alloc, io, package)) try missing.append(alloc, package);
     }
-    if (missing.items.len == 0) return;
+    if (missing.items.len == 0) return &.{};
 
     const package_list = try std.mem.join(alloc, " ", missing.items);
     defer alloc.free(package_list);
@@ -39,9 +38,11 @@ pub fn ensureInstalled(alloc: std.mem.Allocator, io: std.Io, packages: []const [
     const argv = try std.mem.concat(alloc, []const u8, &.{ prefix, missing.items });
     defer alloc.free(argv);
 
-    const term = try runner.runInherit(io, argv);
+    const term = try runner.runQuietUnlessFailed(alloc, io, argv);
     if (!runner.succeeded(term)) {
         std.log.err("dnf install failed", .{});
         return error.DnfFailed;
     }
+
+    return try missing.toOwnedSlice(alloc);
 }

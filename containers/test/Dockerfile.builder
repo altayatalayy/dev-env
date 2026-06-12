@@ -1,6 +1,4 @@
 # syntax=docker/dockerfile:1.7
-# Ubuntu release builder: compiles the dev-env binaries and (for source-built
-# tools) runs the compile-from-source flow, so it carries build toolchains.
 
 FROM ubuntu:24.04
 
@@ -18,19 +16,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install --yes --no-install-recommends \
         bash \
         ca-certificates \
-        curl \
+        coreutils \
         tar \
         xz-utils \
         zstd
 
-RUN curl --fail --location --show-error \
-        "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_ARCH}-linux-${ZIG_VERSION}.tar.xz" \
-        --output /tmp/zig.tar.xz && \
-    mkdir --parents /opt/zig && \
+ADD https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_ARCH}-linux-${ZIG_VERSION}.tar.xz /tmp/zig.tar.xz
+RUN mkdir --parents /opt/zig && \
     tar --extract --xz --file /tmp/zig.tar.xz --directory /opt/zig --strip-components=1 && \
     rm --force /tmp/zig.tar.xz
 
 WORKDIR /src
 COPY . .
-
-ENTRYPOINT ["bash", "/src/release/build-release.sh"]

@@ -113,13 +113,13 @@ test "support matching" {
 }
 
 test "platform json round trip" {
-    const gpa = std.testing.allocator;
+    const alloc = std.testing.allocator;
 
     const original: Platform = .{ .ubuntu = .{ .version = "24.04", .arch = .aarch64 } };
-    const encoded = try std.json.Stringify.valueAlloc(gpa, original, .{});
-    defer gpa.free(encoded);
+    const encoded = try std.json.Stringify.valueAlloc(alloc, original, .{});
+    defer alloc.free(encoded);
 
-    const decoded = try std.json.parseFromSlice(Platform, gpa, encoded, .{});
+    const decoded = try std.json.parseFromSlice(Platform, alloc, encoded, .{});
     defer decoded.deinit();
 
     try std.testing.expect(original.eql(decoded.value));
@@ -133,7 +133,7 @@ test "platform equality and accessors" {
     try std.testing.expectEqual(Family.linux, a.family());
     try std.testing.expectEqual(PackageManager.apt, a.packageManager());
 
-    const fedora: Platform = .{ .fedora = .{ .version = "42", .arch = .x86_64 } };
+    const fedora: Platform = .{ .fedora = .{ .version = "44", .arch = .x86_64 } };
     try std.testing.expectEqual(PackageManager.dnf, fedora.packageManager());
 
     const mac: Platform = .{ .macos = .{ .version = "15.5", .arch = .aarch64 } };

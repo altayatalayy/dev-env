@@ -14,38 +14,27 @@ fi
 if ! dev_env_require_binaries; then
     exit 1
 fi
-
 if ! dev_env_prepare_state smoke; then
     exit 1
 fi
-
-if ! dev_env_install_release; then
+if ! dev_env_install_fake_release 0.1.0; then
     exit 1
 fi
 
-PLAN_OUT="${TEST_HOME}/plan.out"
-if ! "${DEV_ENV}" plan --installer "${RELEASE}" --tools tmux > "${PLAN_OUT}"; then
-    echo "dev-env plan failed with installer release" >&2
+if ! "${DEV_ENV}" plan --installer 0.1.0 --tools tmux; then
+    echo "dev-env plan failed" >&2
     exit 1
 fi
 
-if ! test -f "${XDG_DATA_HOME}/dev-env/lock.json"; then
-    echo "dev-env plan did not write lock.json" >&2
+LOCK_JSON="${XDG_DATA_HOME}/dev-env/lock.json"
+if ! dev_env_json_assert equals "${LOCK_JSON}" installer_release 0.1.0; then
     exit 1
 fi
-
-if ! grep --fixed-strings '"installer_path"' "${XDG_DATA_HOME}/dev-env/lock.json" >/dev/null; then
-    echo "lock.json did not record installer_path" >&2
+if ! dev_env_json_assert contains "${LOCK_JSON}" selected_tools tmux; then
     exit 1
 fi
-
-if ! grep --fixed-strings 'tmux' "${XDG_DATA_HOME}/dev-env/lock.json" >/dev/null; then
-    echo "dev-env plan did not record tmux in lock.json" >&2
-    exit 1
-fi
-
 if ! "${DEV_ENV}" doctor; then
-    echo "dev-env doctor failed from recorded state" >&2
+    echo "dev-env doctor failed with only lock state" >&2
     exit 1
 fi
 
@@ -55,23 +44,32 @@ if ! printf '{"protocol":1,"dest":"%s"}\n' "${DOTFILES_DEST}" > "${DOTFILES_REQU
     echo "failed to write dotfiles extraction request" >&2
     exit 1
 fi
-
 if ! "${INSTALLER}" extract-dotfiles < "${DOTFILES_REQUEST}" > "${DOTFILES_OUT}"; then
-    echo "dotfiles extraction failed" >&2
+    echo "fake dotfiles extraction failed" >&2
     exit 1
 fi
-
 if ! test -f "${DOTFILES_DEST}/tmux/.config/tmux/tmux.conf"; then
-    echo "tmux dotfiles package was not extracted with the expected layout" >&2
+    echo "tmux dotfiles package was not extracted" >&2
     exit 1
 fi
-
 if ! test -f "${DOTFILES_DEST}/shell/.zshenv"; then
-    echo "shell dotfiles package was not extracted with the expected layout" >&2
+    echo "shell dotfiles package was not extracted" >&2
     exit 1
 fi
+if ! python3 - "${DOTFILES_OUT}" <<'PY'
+import json
+import sys
+from pathlib import Path
 
-if ! grep --fixed-strings '"command":"extract-dotfiles"' "${DOTFILES_OUT}" >/dev/null; then
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    if not line.strip():
+        continue
+    msg = json.loads(line)
+    if msg.get("kind") == "response" and msg.get("command") == "extract-dotfiles":
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+then
     echo "dotfiles extraction response has the wrong command" >&2
     exit 1
 fi

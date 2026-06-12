@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-FROM fedora:42
+ARG UBUNTU_VERSION=24.04
+FROM ubuntu:${UBUNTU_VERSION}
 
+ARG DEBIAN_FRONTEND=noninteractive
 ARG TEST_UID=1000
 ARG TEST_GID=1000
 
@@ -11,22 +13,20 @@ ENV XDG_CACHE_HOME=/home/devtest/.cache
 ENV XDG_DATA_HOME=/home/devtest/.local/share
 ENV PATH=/opt/dev-env/bin:/home/devtest/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN --mount=type=cache,target=/var/cache/dnf,sharing=locked \
-    dnf install --assumeyes --setopt=keepcache=True \
+RUN rm -f /etc/apt/apt.conf.d/docker-clean
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && \
+    apt-get install --yes --no-install-recommends \
         bash \
         ca-certificates \
         coreutils \
         curl \
         findutils \
         grep \
-        shadow-utils \
+        python3 \
         sudo \
         stow
-
-COPY build/bin/dev-env /opt/dev-env/bin/dev-env
-COPY build/bin/dev-env-install /opt/dev-env/bin/dev-env-install
-COPY install.sh /opt/dev-env-test/install.sh
-COPY test/integration /opt/dev-env-test/integration
 
 RUN if getent group "${TEST_GID}" >/dev/null; then \
         TEST_GROUP="$(getent group "${TEST_GID}" | cut --delimiter=: --fields=1)"; \
@@ -46,7 +46,7 @@ RUN if getent group "${TEST_GID}" >/dev/null; then \
             devtest; \
         TEST_USER=devtest; \
     fi && \
-    mkdir --parents /home/devtest && \
+    mkdir --parents /home/devtest /opt/dev-env/bin /opt/dev-env-test && \
     chown "${TEST_UID}:${TEST_GID}" /home/devtest && \
     echo "${TEST_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devtest && \
     chmod 0440 /etc/sudoers.d/devtest
@@ -54,4 +54,4 @@ RUN if getent group "${TEST_GID}" >/dev/null; then \
 USER ${TEST_UID}:${TEST_GID}
 WORKDIR /tmp
 
-CMD ["bash", "/opt/dev-env-test/integration/smoke.sh"]
+CMD ["bash", "/opt/dev-env-test/integration/run.sh"]

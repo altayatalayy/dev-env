@@ -2,12 +2,12 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 if [ $? -ne 0 ]; then
-    echo "failed to locate integration script directory" >&2
+    echo "failed to locate e2e script directory" >&2
     exit 1
 fi
 
-if ! . "${SCRIPT_DIR}/common.sh"; then
-    echo "failed to load integration helpers" >&2
+if ! . "${SCRIPT_DIR}/../integration/common.sh"; then
+    echo "failed to load test helpers" >&2
     exit 1
 fi
 
@@ -53,7 +53,7 @@ if ! test -f "${INSTALLED_JSON}"; then
 fi
 
 for tool in "$@"; do
-    if ! grep --extended-regexp "\"tool\"[[:space:]]*:[[:space:]]*\"${tool}\"" "${INSTALLED_JSON}" >/dev/null; then
+    if ! dev_env_json_assert contains-field "${INSTALLED_JSON}" tools tool "${tool}"; then
         echo "installed.json did not record ${tool}" >&2
         exit 1
     fi

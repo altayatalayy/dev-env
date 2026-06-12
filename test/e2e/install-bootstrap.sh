@@ -2,12 +2,12 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 if [ $? -ne 0 ]; then
-    echo "failed to locate integration script directory" >&2
+    echo "failed to locate e2e script directory" >&2
     exit 1
 fi
 
-if ! . "${SCRIPT_DIR}/common.sh"; then
-    echo "failed to load integration helpers" >&2
+if ! . "${SCRIPT_DIR}/../integration/common.sh"; then
+    echo "failed to load test helpers" >&2
     exit 1
 fi
 
@@ -19,17 +19,12 @@ if ! dev_env_prepare_state bootstrap; then
     exit 1
 fi
 
-if [ -z "${DEV_ENV_RELEASE_JSON_URL:-}" ]; then
-    echo "missing DEV_ENV_RELEASE_JSON_URL" >&2
+if [ -z "${DEV_ENV_RELEASE_ROOT_URL:-}" ]; then
+    echo "missing DEV_ENV_RELEASE_ROOT_URL" >&2
     exit 1
 fi
 
-if [ -z "${DEV_ENV_RELEASE_BASE_URL:-}" ]; then
-    echo "missing DEV_ENV_RELEASE_BASE_URL" >&2
-    exit 1
-fi
-
-if ! bash /opt/dev-env-test/install.sh; then
+if ! bash /opt/dev-env-install.sh --release-root-url "${DEV_ENV_RELEASE_ROOT_URL}"; then
     echo "bootstrap install failed" >&2
     exit 1
 fi

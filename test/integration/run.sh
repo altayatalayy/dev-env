@@ -6,14 +6,24 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if ! bash "${SCRIPT_DIR}/smoke.sh"; then
-    echo "smoke integration tests failed" >&2
-    exit 1
-fi
+TESTS="
+platform.sh
+smoke.sh
+plan-change.sh
+apply-idempotent.sh
+upgrade-downgrade.sh
+config-conflicts.sh
+doctor.sh
+clean-uninstall.sh
+protocol-failure.sh
+"
 
-if [ -n "${DEV_ENV_RELEASE_JSON_URL:-}" ] && [ -n "${DEV_ENV_RELEASE_BASE_URL:-}" ]; then
-    if ! bash "${SCRIPT_DIR}/install-bootstrap.sh"; then
-        echo "bootstrap integration tests failed" >&2
+for test_script in ${TESTS}; do
+    echo "==> integration/${test_script}"
+    if ! bash "${SCRIPT_DIR}/${test_script}"; then
+        echo "integration test failed: ${test_script}" >&2
         exit 1
     fi
-fi
+done
+
+echo "integration suite passed"

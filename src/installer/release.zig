@@ -22,7 +22,7 @@ pub const supported_platforms = [_]platform.Support{
         .archs = &.{ .x86_64, .aarch64 },
     } },
     .{ .fedora = .{
-        .versions = &.{ "42", "43" },
+        .versions = &.{"44"},
         .archs = &.{ .x86_64, .aarch64 },
     } },
     .{ .macos = .{
@@ -215,18 +215,18 @@ pub const tool_defs = [_]tools.ToolDef{
         .methods = &.{
             .{
                 .on = &linux,
-                .requires_tools = &.{.zig},
                 .method = .{ .source = .{
                     .version = neovim_version,
                     .url = "https://github.com/neovim/neovim/archive/refs/tags/v" ++ neovim_version ++ ".tar.gz",
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
-                        .apt = &.{"git"},
-                        .dnf = &.{"git"},
+                        .apt = &.{ "build-essential", "cmake", "curl", "gettext", "git", "ninja-build", "pkg-config", "unzip" },
+                        .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "git", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
                     },
                     .build_steps = &.{
-                        .{ .name = "build and install", .argv = &.{ "zig", "build", "install", "--prefix", "{prefix}" } },
+                        .{ .name = "build", .argv = &.{ "make", "CMAKE_BUILD_TYPE=Release", "CMAKE_INSTALL_PREFIX={prefix}" } },
+                        .{ .name = "install", .argv = &.{ "make", "install" } },
                     },
                     .bin_links = &.{
                         .{ .name = "nvim", .rel_path = "bin/nvim" },

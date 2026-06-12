@@ -176,7 +176,7 @@ fn envExports(alloc: std.mem.Allocator, exports: []const tools.EnvExport) ![]con
 const testing = std.testing;
 
 const ubuntu: platform.Platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } };
-const fedora: platform.Platform = .{ .fedora = .{ .version = "42", .arch = .x86_64 } };
+const fedora: platform.Platform = .{ .fedora = .{ .version = "44", .arch = .x86_64 } };
 const macos: platform.Platform = .{ .macos = .{ .version = "15.5", .arch = .aarch64 } };
 
 test "plan merges and dedupes apt packages and adds stow" {
@@ -264,16 +264,16 @@ test "release plan resolves config and toolchain dependencies" {
         .include_configs = true,
     });
 
-    // neovim source build -> zig; neovim-config -> go.
-    const expected_tools = [_][]const u8{ "go", "neovim", "zig" };
+    // neovim-config -> go; Neovim's CMake source build uses system packages.
+    const expected_tools = [_][]const u8{ "go", "neovim" };
     try testing.expectEqual(expected_tools.len, resp.resolved_tools.len);
     for (expected_tools, resp.resolved_tools) |want, got| {
         try testing.expectEqualStrings(want, got);
     }
     try testing.expectEqual(@as(usize, 1), resp.resolved_configs.len);
     try testing.expectEqualStrings("neovim-config", resp.resolved_configs[0]);
+    try testing.expect(ids.contains(resp.system_packages.apt, "cmake"));
     try testing.expect(ids.contains(resp.system_packages.apt, "git"));
-    try testing.expect(!ids.contains(resp.system_packages.apt, "cmake"));
 
     var found_neovim = false;
     for (resp.tool_actions) |action| {

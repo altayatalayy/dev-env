@@ -42,7 +42,10 @@ pub fn applyOutcome(
     if (diff.isEmpty() and old_receipt != null) return;
 
     const manager: system.Manager = .init(lock.platform.packageManager());
-    try manager.ensureInstalled(alloc, io, plan.system_packages);
+    const package_result = try manager.ensureInstalled(alloc, io, plan.system_packages);
+    if (package_result.changed()) {
+        std.log.info("system packages changed: {d} installed", .{package_result.installed.len});
+    }
 
     var merged_tools: std.ArrayList(proto.InstalledTool) = .empty;
     if (old_receipt) |old| {
@@ -255,7 +258,7 @@ fn ownedSymlinks(
         try links.appendSlice(alloc, tool.bin_links);
     }
     try links.appendSlice(alloc, stow_links);
-    return links.items;
+    return ids.sortedUnique(alloc, links.items);
 }
 
 /// Opt prefixes (~/.local/opt/<tool>) ever created; kept across applies even
@@ -275,4 +278,49 @@ fn ownedPrefixes(
         try prefixes.append(alloc, prefix);
     }
     return ids.sortedUnique(alloc, prefixes.items);
+}
+
+
+// --- tests ---
+
+test "ownedSymlinks returns unique sorted links" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const tools = [_]proto.InstalledTool{
+        .{ .tool = "tmux", .kind = .archive, .version = "1", .bin_links = &.{ "/b/tmux", "/b/shared" } },
+        .{ .tool = "zig", .kind = .archive, .version = "1", .bin_links = &.{"/b/zig"} },
+    };
+    const links = try ownedSymlinks(alloc, &tools, &.{ "/b/shared", "/b/stow" });
+
+    const expected = [_][]const u8{ "/b/shared", "/b/stow", "/b/tmux", "/b/zig" };
+    try std.testing.expectEqual(expected.len, links.len);
+    for (expected, links) |want, got| {
+        try std.testing.expectEqualStrings(want, got);
+    }
+}
+
+test "ownedPrefixes keeps old prefixes and adds active tool prefixes uniquely" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const old_receipt: receipt_mod.Receipt = .{
+        .installer_release = "0.1.0",
+        .installer_path = "/x/dev-env-install",
+        .platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } },
+        .owned_prefixes = &.{ "/opt/tmux", "/opt/old" },
+    };
+    const tools = [_]proto.InstalledTool{
+        .{ .tool = "tmux", .kind = .archive, .version = "0.2.0", .opt_dir = "/opt/tmux/0.2.0" },
+        .{ .tool = "zig", .kind = .archive, .version = "0.16.0", .opt_dir = "/opt/zig/0.16.0" },
+    };
+    const prefixes = try ownedPrefixes(alloc, &tools, old_receipt);
+
+    const expected = [_][]const u8{ "/opt/old", "/opt/tmux", "/opt/zig" };
+    try std.testing.expectEqual(expected.len, prefixes.len);
+    for (expected, prefixes) |want, got| {
+        try std.testing.expectEqualStrings(want, got);
+    }
 }
