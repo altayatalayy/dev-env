@@ -113,17 +113,19 @@ def resolve() -> None:
     })
 
 
-def make_tool(tool: str) -> dict:
-    home = Path(os.environ["HOME"])
+def make_tool(req: dict, tool: str) -> dict:
     bin_name = BIN_NAMES.get(tool, tool)
-    opt_dir = home / ".local" / "opt" / tool / release_id()
+    layout = req.get("layout", {})
+    opt_root = Path(layout.get("opt", str(Path(os.environ["HOME"]) / ".local" / "share" / "dev-env" / "tools")))
+    bin_root = Path(layout.get("bin", str(Path(os.environ["HOME"]) / ".local" / "bin")))
+    opt_dir = opt_root / tool / release_id()
     bin_dir = opt_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     exe = bin_dir / bin_name
     exe.write_text(f"#!/usr/bin/env sh\nprintf '%s\\n' 'fake {tool} {release_id()}'\n", encoding="utf-8")
     exe.chmod(0o755)
 
-    link = home / ".local" / "bin" / bin_name
+    link = bin_root / bin_name
     link.parent.mkdir(parents=True, exist_ok=True)
     if link.exists() or link.is_symlink():
         link.unlink()
@@ -139,16 +141,18 @@ def make_tool(tool: str) -> dict:
 
 def apply() -> None:
     req = read_request()
+    read_request.current = req
     tools = []
     for tool in req.get("install", []):
         progress("apply", {"event": "install_started", "tool": tool})
-        tools.append(make_tool(tool))
+        tools.append(make_tool(req, tool))
         progress("apply", {"event": "install_finished", "tool": tool})
 
-    home = Path(os.environ["HOME"])
+    layout = req.get("layout", {})
+    bin_root = Path(layout.get("bin", str(Path(os.environ["HOME"]) / ".local" / "bin")))
     for tool in req.get("deactivate", []):
         bin_name = BIN_NAMES.get(tool, tool)
-        link = home / ".local" / "bin" / bin_name
+        link = bin_root / bin_name
         if link.is_symlink():
             link.unlink()
 
@@ -195,11 +199,12 @@ def verify() -> None:
 
 def uninstall() -> None:
     req = read_request()
-    home = Path(os.environ["HOME"])
+    layout = req.get("layout", {})
+    bin_root = Path(layout.get("bin", str(Path(os.environ["HOME"]) / ".local" / "bin")))
     removed = []
     for tool in req.get("tools", []):
         bin_name = BIN_NAMES.get(tool, tool)
-        link = home / ".local" / "bin" / bin_name
+        link = bin_root / bin_name
         if link.is_symlink():
             link.unlink()
         removed.append(tool)

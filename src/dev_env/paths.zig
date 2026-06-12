@@ -1,11 +1,14 @@
-//! All paths owned by dev-env, derived from $HOME.
+//! All paths owned by dev-env, derived from XDG roots and $HOME.
 
 const std = @import("std");
+const proto = @import("shared").protocol;
 
 pub const Paths = struct {
     home: []const u8,
-    /// ~/.local/share/dev-env
+    /// $XDG_DATA_HOME/dev-env.
     data: []const u8,
+    /// $XDG_CACHE_HOME/dev-env.
+    cache: []const u8,
     lock: []const u8,
     installed: []const u8,
     installers: []const u8,
@@ -13,17 +16,32 @@ pub const Paths = struct {
     stow_source: []const u8,
     backups: []const u8,
     launcher: []const u8,
-    /// ~/.local/bin
+    /// Executable links. Defaults to ~/.local/bin because XDG has no bin dir.
     bin: []const u8,
-    /// ~/.local/opt
+    /// Versioned tool installs. Defaults to $XDG_DATA_HOME/dev-env/tools.
     opt: []const u8,
 
     pub fn init(alloc: std.mem.Allocator, home: []const u8) !Paths {
+        const data_root = try std.fmt.allocPrint(alloc, "{s}/.local/share", .{home});
+        const cache_root = try std.fmt.allocPrint(alloc, "{s}/.cache", .{home});
+        return initWithXdg(alloc, home, data_root, cache_root);
+    }
+
+    pub fn initWithXdg(
+        alloc: std.mem.Allocator,
+        home: []const u8,
+        data_root: []const u8,
+        cache_root: []const u8,
+    ) !Paths {
         if (!std.fs.path.isAbsolute(home)) return error.HomeNotAbsolute;
-        const data = try std.fmt.allocPrint(alloc, "{s}/.local/share/dev-env", .{home});
+        if (!std.fs.path.isAbsolute(data_root)) return error.DataRootNotAbsolute;
+        if (!std.fs.path.isAbsolute(cache_root)) return error.CacheRootNotAbsolute;
+        const data = try std.fmt.allocPrint(alloc, "{s}/dev-env", .{data_root});
+        const cache = try std.fmt.allocPrint(alloc, "{s}/dev-env", .{cache_root});
         return .{
             .home = home,
             .data = data,
+            .cache = cache,
             .lock = try std.fmt.allocPrint(alloc, "{s}/lock.json", .{data}),
             .installed = try std.fmt.allocPrint(alloc, "{s}/installed.json", .{data}),
             .installers = try std.fmt.allocPrint(alloc, "{s}/installers", .{data}),
@@ -32,7 +50,15 @@ pub const Paths = struct {
             .backups = try std.fmt.allocPrint(alloc, "{s}/backups", .{data}),
             .launcher = try std.fmt.allocPrint(alloc, "{s}/launcher", .{data}),
             .bin = try std.fmt.allocPrint(alloc, "{s}/.local/bin", .{home}),
-            .opt = try std.fmt.allocPrint(alloc, "{s}/.local/opt", .{home}),
+            .opt = try std.fmt.allocPrint(alloc, "{s}/tools", .{data}),
+        };
+    }
+
+    pub fn installLayout(p: Paths) proto.InstallLayout {
+        return .{
+            .bin = p.bin,
+            .opt = p.opt,
+            .cache_dir = p.cache,
         };
     }
 
@@ -56,10 +82,11 @@ test Paths {
 
     const p = try Paths.init(alloc, "/home/u");
     try std.testing.expectEqualStrings("/home/u/.local/share/dev-env", p.data);
+    try std.testing.expectEqualStrings("/home/u/.cache/dev-env", p.cache);
     try std.testing.expectEqualStrings("/home/u/.local/share/dev-env/lock.json", p.lock);
     try std.testing.expectEqualStrings("/home/u/.local/share/dev-env/installed.json", p.installed);
     try std.testing.expectEqualStrings("/home/u/.local/bin", p.bin);
-    try std.testing.expectEqualStrings("/home/u/.local/opt", p.opt);
+    try std.testing.expectEqualStrings("/home/u/.local/share/dev-env/tools", p.opt);
 
     try std.testing.expectEqualStrings(
         "/home/u/.local/share/dev-env/installers/0.2.0/dev-env-install",
@@ -75,4 +102,9 @@ test Paths {
     );
 
     try std.testing.expectError(error.HomeNotAbsolute, Paths.init(alloc, "relative"));
+
+    const xdg = try Paths.initWithXdg(alloc, "/home/u", "/tmp/data", "/tmp/cache");
+    try std.testing.expectEqualStrings("/tmp/data/dev-env", xdg.data);
+    try std.testing.expectEqualStrings("/tmp/cache/dev-env", xdg.cache);
+    try std.testing.expectEqualStrings("/tmp/data/dev-env/tools", xdg.opt);
 }

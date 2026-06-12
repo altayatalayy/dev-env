@@ -96,7 +96,7 @@ case ",${TOOLS_CSV}," in
             echo "tmux install validation failed" >&2
             exit 1
         fi
-        if ! test -x "${HOME}/.tmux/plugins/tpm/bin/install_plugins"; then
+        if ! test -x "${HOME}/.local/share/tmux/plugins/tpm/bin/install_plugins"; then
             echo "tmux plugin manager validation failed" >&2
             exit 1
         fi

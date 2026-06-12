@@ -59,6 +59,7 @@ pub fn applyOutcome(
         const response = try client.applyTools(alloc, io, outcome.installer, .{
             .protocol = proto.version,
             .platform = lock.platform,
+            .layout = lock.install_layout,
             .tools = lock.resolved_tools,
             .install = diff.install_tools,
             .deactivate = diff.deactivate_tools,
@@ -82,6 +83,7 @@ pub fn applyOutcome(
         .installer_release = lock.installer_release,
         .installer_path = outcome.installer.bin_path,
         .platform = lock.platform,
+        .install_layout = lock.install_layout,
         .tools = merged_tools.items,
         .configs = try configsForPackages(alloc, plan, stowed),
         .stow_packages = stowed,
@@ -212,6 +214,7 @@ fn applyConfigs(
         _ = try client.applyConfigs(alloc, io, outcome.installer, .{
             .protocol = proto.version,
             .platform = lock.platform,
+            .layout = lock.install_layout,
             .tools = plan.resolved_tools,
             .configs = stowed_configs,
         });
@@ -261,7 +264,7 @@ fn ownedSymlinks(
     return ids.sortedUnique(alloc, links.items);
 }
 
-/// Opt prefixes (~/.local/opt/<tool>) ever created; kept across applies even
+/// Opt prefixes (<opt>/<tool>) ever created; kept across applies even
 /// for deactivated tools so clean can find their leftover versions.
 fn ownedPrefixes(
     alloc: std.mem.Allocator,
@@ -279,7 +282,6 @@ fn ownedPrefixes(
     }
     return ids.sortedUnique(alloc, prefixes.items);
 }
-
 
 // --- tests ---
 
@@ -310,6 +312,7 @@ test "ownedPrefixes keeps old prefixes and adds active tool prefixes uniquely" {
         .installer_release = "0.1.0",
         .installer_path = "/x/dev-env-install",
         .platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } },
+        .install_layout = .{ .bin = "/b", .opt = "/opt", .cache_dir = "/cache" },
         .owned_prefixes = &.{ "/opt/tmux", "/opt/old" },
     };
     const tools = [_]proto.InstalledTool{

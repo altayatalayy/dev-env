@@ -27,11 +27,11 @@ if ! "${DEV_ENV}" upgrade --config-conflict=backup; then
     echo "upgrade failed" >&2
     exit 1
 fi
-if ! test -d "${HOME}/.local/opt/tmux/0.1.0"; then
+if ! test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.1.0"; then
     echo "old tmux version missing before clean" >&2
     exit 1
 fi
-if ! test -d "${HOME}/.local/opt/tmux/0.2.0"; then
+if ! test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.2.0"; then
     echo "active tmux version missing before clean" >&2
     exit 1
 fi
@@ -39,11 +39,11 @@ if ! "${DEV_ENV}" clean; then
     echo "clean failed" >&2
     exit 1
 fi
-if test -d "${HOME}/.local/opt/tmux/0.1.0"; then
+if test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.1.0"; then
     echo "clean kept inactive tmux version" >&2
     exit 1
 fi
-if ! test -d "${HOME}/.local/opt/tmux/0.2.0"; then
+if ! test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.2.0"; then
     echo "clean removed active tmux version" >&2
     exit 1
 fi

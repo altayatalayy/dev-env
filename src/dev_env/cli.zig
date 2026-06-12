@@ -26,6 +26,9 @@ pub const usage =
     \\  --tools <a,b,...>           replace the tool selection
     \\  --add <a,b,...>             add tools to the selection
     \\  --remove <a,b,...>          remove tools from the selection
+    \\  --bin-dir <path>            executable link directory (absolute)
+    \\  --opt-dir <path>            versioned tool install directory (absolute)
+    \\  --cache-dir <path>          installer download/build cache (absolute)
     \\
     \\config conflict options (apply/upgrade/uninstall):
     \\  --config-conflict=fail|backup|skip   default: fail
@@ -47,6 +50,9 @@ pub const Command = union(enum) {
         tools: ?[]const []const u8 = null,
         add: []const []const u8 = &.{},
         remove: []const []const u8 = &.{},
+        bin_dir: ?[]const u8 = null,
+        opt_dir: ?[]const u8 = null,
+        cache_dir: ?[]const u8 = null,
     };
 
     /// `dev-env build` always auto-detects the host platform/version/arch; it
@@ -160,6 +166,12 @@ fn parsePlan(alloc: std.mem.Allocator, args: []const []const u8) Error!Command.P
             try add.appendSlice(alloc, try splitNames(alloc, try flagValue(flag, args, &index)));
         } else if (std.mem.eql(u8, flag.name, "--remove")) {
             try remove.appendSlice(alloc, try splitNames(alloc, try flagValue(flag, args, &index)));
+        } else if (std.mem.eql(u8, flag.name, "--bin-dir")) {
+            plan.bin_dir = try absolutePathOption(flag, args, &index);
+        } else if (std.mem.eql(u8, flag.name, "--opt-dir")) {
+            plan.opt_dir = try absolutePathOption(flag, args, &index);
+        } else if (std.mem.eql(u8, flag.name, "--cache-dir")) {
+            plan.cache_dir = try absolutePathOption(flag, args, &index);
         } else {
             return fail("unknown plan option: {s}", .{flag.name});
         }
@@ -255,6 +267,9 @@ pub fn plannerOptions(plan: Command.Plan) planner.Options {
         .tools = plan.tools,
         .add = plan.add,
         .remove = plan.remove,
+        .bin_dir = plan.bin_dir,
+        .opt_dir = plan.opt_dir,
+        .cache_dir = plan.cache_dir,
     };
 }
 
@@ -311,6 +326,11 @@ test "parse plan flags" {
         "--add=zig",
         "--remove",
         "alacritty",
+        "--bin-dir",
+        "/tmp/bin",
+        "--opt-dir=/tmp/opt",
+        "--cache-dir",
+        "/tmp/cache",
     })).plan;
 
     try testing.expectEqualStrings("0.2.0", plan.installer.?);
@@ -321,12 +341,17 @@ test "parse plan flags" {
     try testing.expectEqualStrings("go", plan.add[0]);
     try testing.expectEqualStrings("zig", plan.add[1]);
     try testing.expectEqual(@as(usize, 1), plan.remove.len);
+    try testing.expectEqualStrings("/tmp/bin", plan.bin_dir.?);
+    try testing.expectEqualStrings("/tmp/opt", plan.opt_dir.?);
+    try testing.expectEqualStrings("/tmp/cache", plan.cache_dir.?);
 
     const options = plannerOptions(plan);
     try testing.expectEqualStrings("0.2.0", options.installer.release);
+    try testing.expectEqualStrings("/tmp/bin", options.bin_dir.?);
 
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "plan", "--tools" }));
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "plan", "--bogus=1" }));
+    try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "plan", "--opt-dir", "relative" }));
 }
 
 test "parse build flags" {

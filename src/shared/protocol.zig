@@ -163,7 +163,7 @@ fn writeLine(alloc: std.mem.Allocator, writer: *std.Io.Writer, message: anytype)
 }
 
 pub const ToolKind = enum {
-    /// Downloaded archive installed under ~/.local/opt/<tool>/<version>.
+    /// Downloaded archive installed under the configured opt root.
     archive,
     /// Provided by the system package manager (apt/brew); never versioned
     /// or removed by dev-env.
@@ -198,6 +198,7 @@ pub const ResolveRequest = struct {
     platform: platform.Platform,
     tools: []const []const u8,
     include_configs: bool,
+    include_runtime_dependencies: bool = true,
 };
 
 pub const SystemPackages = struct {
@@ -219,6 +220,12 @@ pub const ToolAction = struct {
     version: []const u8,
     build_dependencies: SystemPackages = .{},
     env_exports: []const EnvExport = &.{},
+};
+
+pub const InstallLayout = struct {
+    bin: []const u8,
+    opt: []const u8,
+    cache_dir: []const u8,
 };
 
 pub const EnvExport = struct {
@@ -246,6 +253,7 @@ pub const ResolveResponse = struct {
 pub const ApplyRequest = struct {
     protocol: u32,
     platform: platform.Platform,
+    layout: InstallLayout,
     /// Every resolved active tool, including ones already installed. The
     /// installer derives step environments (e.g. cargo on PATH) from this
     /// set, so it must not be limited to the install diff.
@@ -273,6 +281,7 @@ pub const ApplyResponse = struct {
 pub const VerifyRequest = struct {
     protocol: u32,
     platform: platform.Platform,
+    layout: InstallLayout,
     tools: []const []const u8,
 };
 
@@ -289,6 +298,7 @@ pub const VerifyResponse = struct {
 pub const ConfigApplyRequest = struct {
     protocol: u32,
     platform: platform.Platform,
+    layout: InstallLayout,
     /// Active resolved tools, used only so the installer can apply tool-owned
     /// runtime environment exports while running config steps.
     tools: []const []const u8,
@@ -302,6 +312,7 @@ pub const ConfigApplyResponse = struct {
 pub const UninstallRequest = struct {
     protocol: u32,
     platform: platform.Platform,
+    layout: InstallLayout,
     tools: []const []const u8,
 };
 

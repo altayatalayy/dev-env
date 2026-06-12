@@ -42,10 +42,14 @@ const alacritty_version = "0.15.1";
 const linux = [_]platform.PackageManager{ .apt, .dnf };
 
 const tmux_install_tpm =
-    "if [ ! -d \"{home}/.tmux/plugins/tpm\" ]; then " ++
-    "mkdir -p \"{home}/.tmux/plugins\" && " ++
-    "git clone --depth 1 https://github.com/tmux-plugins/tpm \"{home}/.tmux/plugins/tpm\"; " ++
+    "if [ ! -d \"{home}/.local/share/tmux/plugins/tpm\" ]; then " ++
+    "mkdir -p \"{home}/.local/share/tmux/plugins\" && " ++
+    "git clone --depth 1 https://github.com/tmux-plugins/tpm \"{home}/.local/share/tmux/plugins/tpm\"; " ++
     "fi";
+
+const parallel_make = "make -j\"$(nproc)\"";
+
+const alacritty_prefix = "{opt}/alacritty/" ++ alacritty_version;
 
 const docker_apt_install_key =
     "curl --fail --silent --show-error --location https://download.docker.com/linux/ubuntu/gpg " ++
@@ -84,7 +88,7 @@ pub const tool_defs = [_]tools.ToolDef{
                     .build_steps = &.{
                         .{ .name = "generate configure", .argv = &.{ "make", "configure" } },
                         .{ .name = "configure", .argv = &.{ "./configure", "--prefix={prefix}" } },
-                        .{ .name = "make", .argv = &.{ "make", "all" } },
+                        .{ .name = "make", .argv = &.{ "sh", "-c", parallel_make ++ " all" } },
                         .{ .name = "install", .argv = &.{ "make", "install" } },
                     },
                     .bin_links = &.{
@@ -127,6 +131,12 @@ pub const tool_defs = [_]tools.ToolDef{
         .methods = &.{
             .{
                 .on = &linux,
+                .exports = &.{
+                    .{ .name = "GOROOT", .value = "{opt}/go/" ++ go_version },
+                    .{ .name = "GOPATH", .value = "{home}/.local/share/go" },
+                    .{ .name = "PATH", .value = "{opt}/go/" ++ go_version ++ "/bin", .mode = .prepend_path },
+                    .{ .name = "PATH", .value = "{home}/.local/share/go/bin", .mode = .prepend_path },
+                },
                 .method = .{ .archive = .{
                     .version = go_version,
                     .sources = &.{
@@ -224,8 +234,12 @@ pub const tool_defs = [_]tools.ToolDef{
                         .apt = &.{ "build-essential", "cmake", "curl", "gettext", "git", "ninja-build", "pkg-config", "unzip" },
                         .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "git", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
                     },
+                    .runtime_dependencies = .{
+                        .apt = &.{"gettext"},
+                        .dnf = &.{"gettext"},
+                    },
                     .build_steps = &.{
-                        .{ .name = "build", .argv = &.{ "make", "CMAKE_BUILD_TYPE=Release", "CMAKE_INSTALL_PREFIX={prefix}" } },
+                        .{ .name = "build", .argv = &.{ "sh", "-c", parallel_make ++ " CMAKE_BUILD_TYPE=Release CMAKE_INSTALL_PREFIX=\"{prefix}\"" } },
                         .{ .name = "install", .argv = &.{ "make", "install" } },
                     },
                     .bin_links = &.{
@@ -260,8 +274,8 @@ pub const tool_defs = [_]tools.ToolDef{
                     } },
                     .{ .name = "install tmux plugins", .argv = &.{
                         "env",
-                        "TMUX_PLUGIN_MANAGER_PATH={home}/.tmux/plugins",
-                        "{home}/.tmux/plugins/tpm/bin/install_plugins",
+                        "TMUX_PLUGIN_MANAGER_PATH={home}/.local/share/tmux/plugins",
+                        "{home}/.local/share/tmux/plugins/tpm/bin/install_plugins",
                     } },
                 },
             },
@@ -278,9 +292,13 @@ pub const tool_defs = [_]tools.ToolDef{
                         .apt = &.{ "automake", "bison", "build-essential", "libevent-dev", "libncurses-dev", "pkg-config" },
                         .dnf = &.{ "automake", "bison", "gcc", "libevent-devel", "make", "ncurses-devel", "pkgconf-pkg-config" },
                     },
+                    .runtime_dependencies = .{
+                        .apt = &.{ "libevent-2.1-7t64", "libncurses6" },
+                        .dnf = &.{ "libevent", "ncurses-libs" },
+                    },
                     .build_steps = &.{
                         .{ .name = "configure", .argv = &.{ "./configure", "--prefix={prefix}" } },
-                        .{ .name = "make", .argv = &.{"make"} },
+                        .{ .name = "make", .argv = &.{ "sh", "-c", parallel_make } },
                         .{ .name = "install", .argv = &.{ "make", "install" } },
                     },
                     .bin_links = &.{
@@ -343,13 +361,12 @@ pub const tool_defs = [_]tools.ToolDef{
                     },
                     .install_steps = &.{
                         .{ .name = "add docker dnf repository", .argv = &.{
-                            "sudo", "dnf", "config-manager", "addrepo",
-                            "--overwrite",
-                            "--from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo",
+                            "sudo",        "dnf",                                                                     "config-manager", "addrepo",
+                            "--overwrite", "--from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo",
                         } },
                         .{ .name = "install docker dnf packages", .argv = &.{
-                            "sudo", "dnf",                "install",            "--assumeyes",
-                            "docker-ce", "docker-ce-cli", "containerd.io",      "docker-buildx-plugin",
+                            "sudo",                  "dnf",           "install",       "--assumeyes",
+                            "docker-ce",             "docker-ce-cli", "containerd.io", "docker-buildx-plugin",
                             "docker-compose-plugin",
                         } },
                         .{ .name = "add user to docker group", .argv = &.{
@@ -373,6 +390,26 @@ pub const tool_defs = [_]tools.ToolDef{
                 .id = .@"alacritty-config",
                 .for_tool = .alacritty,
                 .stow_package = "alacritty",
+                .install_dependencies = .{
+                    .apt = &.{ "desktop-file-utils", "ncurses-bin" },
+                    .dnf = &.{ "desktop-file-utils", "ncurses" },
+                },
+                .install_steps = &.{
+                    .{ .name = "validate desktop entry", .argv = &.{
+                        "desktop-file-validate",
+                        alacritty_prefix ++ "/share/applications/Alacritty.desktop",
+                    } },
+                    .{ .name = "refresh desktop database", .argv = &.{
+                        "update-desktop-database",
+                        alacritty_prefix ++ "/share/applications",
+                    } },
+                    .{ .name = "install alacritty terminfo", .argv = &.{
+                        "tic",
+                        "-xe",
+                        "alacritty,alacritty-direct",
+                        alacritty_prefix ++ "/share/alacritty/alacritty.info",
+                    } },
+                },
             },
         },
         .methods = &.{
@@ -385,14 +422,19 @@ pub const tool_defs = [_]tools.ToolDef{
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
-                        .apt = &.{ "cmake", "desktop-file-utils", "g++", "gzip", "libfontconfig1-dev", "libfreetype6-dev", "libxcb-xfixes0-dev", "libxkbcommon-dev", "ncurses-bin", "pkg-config", "python3", "scdoc" },
-                        .dnf = &.{ "cmake", "desktop-file-utils", "fontconfig-devel", "freetype-devel", "gcc-c++", "gzip", "libxcb-devel", "libxkbcommon-devel", "ncurses", "pkgconf-pkg-config", "python3", "scdoc" },
+                        .apt = &.{ "cmake", "g++", "gzip", "libfontconfig1-dev", "libfreetype6-dev", "libxcb-xfixes0-dev", "libxkbcommon-dev", "pkg-config", "python3", "scdoc" },
+                        .dnf = &.{ "cmake", "fontconfig-devel", "freetype-devel", "gcc-c++", "gzip", "libxcb-devel", "libxkbcommon-devel", "pkgconf-pkg-config", "python3", "scdoc" },
+                    },
+                    .runtime_dependencies = .{
+                        .apt = &.{ "libfontconfig1", "libfreetype6", "libxcb-xfixes0", "libxkbcommon0" },
+                        .dnf = &.{ "fontconfig", "freetype", "libxcb", "libxkbcommon" },
                     },
                     .build_steps = &.{
-                        .{ .name = "cargo build", .argv = &.{ "cargo", "build", "--locked", "--release" } },
+                        .{ .name = "cargo build", .argv = &.{ "sh", "-c", "cargo build --locked --release --jobs \"$(nproc)\"" } },
                         .{ .name = "install binary", .argv = &.{ "install", "-D", "-m", "0755", "target/release/alacritty", "{prefix}/bin/alacritty" } },
                         .{ .name = "install desktop file", .argv = &.{ "install", "-D", "-m", "0644", "extra/linux/Alacritty.desktop", "{prefix}/share/applications/Alacritty.desktop" } },
                         .{ .name = "install icon", .argv = &.{ "install", "-D", "-m", "0644", "extra/logo/alacritty-term.svg", "{prefix}/share/icons/hicolor/scalable/apps/Alacritty.svg" } },
+                        .{ .name = "install terminfo source", .argv = &.{ "install", "-D", "-m", "0644", "extra/alacritty.info", "{prefix}/share/alacritty/alacritty.info" } },
                     },
                     .bin_links = &.{
                         .{ .name = "alacritty", .rel_path = "bin/alacritty" },

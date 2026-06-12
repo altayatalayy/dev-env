@@ -76,7 +76,11 @@ fn printUsage(io: std.Io) !void {
 
 fn pathsFromEnv(alloc: std.mem.Allocator, environ_map: *std.process.Environ.Map) !paths_mod.Paths {
     const home = environ_map.get("HOME") orelse return error.HomeNotSet;
-    return paths_mod.Paths.init(alloc, home);
+    const data_root = environ_map.get("XDG_DATA_HOME") orelse
+        try std.fmt.allocPrint(alloc, "{s}/.local/share", .{home});
+    const cache_root = environ_map.get("XDG_CACHE_HOME") orelse
+        try std.fmt.allocPrint(alloc, "{s}/.cache", .{home});
+    return paths_mod.Paths.initWithXdg(alloc, home, data_root, cache_root);
 }
 
 fn runDoctor(
@@ -118,6 +122,7 @@ fn runDoctor(
         }, .{
             .protocol = proto.version,
             .platform = r.platform,
+            .layout = r.install_layout,
             .tools = try r.toolNames(alloc),
         });
         var failed = false;

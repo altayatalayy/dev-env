@@ -24,6 +24,7 @@ pub const Lock = struct {
     resolved_tools: []const []const u8,
     resolved_configs: []const []const u8,
     include_configs: bool = true,
+    install_layout: proto.InstallLayout,
 };
 
 pub fn loadLock(alloc: std.mem.Allocator, io: std.Io, paths: paths_mod.Paths) !?Lock {
@@ -51,6 +52,9 @@ pub const Options = struct {
     tools: ?[]const []const u8 = null,
     add: []const []const u8 = &.{},
     remove: []const []const u8 = &.{},
+    bin_dir: ?[]const u8 = null,
+    opt_dir: ?[]const u8 = null,
+    cache_dir: ?[]const u8 = null,
 };
 
 pub const Outcome = struct {
@@ -95,6 +99,7 @@ pub fn buildPlan(
     for (inst.meta.tools, available) |tool, *name| name.* = tool.name;
 
     const selected = try selectTools(alloc, available, existing, options);
+    const install_layout = selectedLayout(paths, existing, options);
 
     const resolve_response = try client.resolve(alloc, io, inst, .{
         .protocol = proto.version,
@@ -111,10 +116,24 @@ pub fn buildPlan(
         .resolved_tools = resolve_response.resolved_tools,
         .resolved_configs = resolve_response.resolved_configs,
         .include_configs = if (existing) |lock| lock.include_configs else true,
+        .install_layout = install_layout,
     };
     try receipt_mod.saveJsonFile(alloc, io, paths.lock, lock);
 
     return .{ .lock = lock, .installer = inst, .plan = resolve_response };
+}
+
+fn selectedLayout(
+    paths: paths_mod.Paths,
+    existing: ?Lock,
+    options: Options,
+) proto.InstallLayout {
+    const base = if (existing) |lock| lock.install_layout else paths.installLayout();
+    return .{
+        .bin = options.bin_dir orelse base.bin,
+        .opt = options.opt_dir orelse base.opt,
+        .cache_dir = options.cache_dir orelse base.cache_dir,
+    };
 }
 
 fn requireNewest(
@@ -271,6 +290,11 @@ fn testLock(release: []const u8) Lock {
         .selected_tools = &.{ "neovim", "tmux" },
         .resolved_tools = &.{ "go", "neovim", "tmux", "zig" },
         .resolved_configs = &.{ "neovim-config", "tmux-config" },
+        .install_layout = .{
+            .bin = "/x/bin",
+            .opt = "/x/opt",
+            .cache_dir = "/x/cache",
+        },
     };
 }
 
@@ -306,6 +330,25 @@ test "lock round trip" {
     try testing.expectEqual(@as(usize, 2), loaded.selected_tools.len);
     try testing.expectEqual(@as(usize, 4), loaded.resolved_tools.len);
     try testing.expect(loaded.include_configs);
+    try testing.expectEqualStrings("/x/opt", loaded.install_layout.opt);
+}
+
+test "selectedLayout keeps locked values unless overridden" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const paths = try paths_mod.Paths.initWithXdg(alloc, "/home/u", "/xdg/data", "/xdg/cache");
+    const initial = selectedLayout(paths, null, .{});
+    try testing.expectEqualStrings("/xdg/data/dev-env/tools", initial.opt);
+    try testing.expectEqualStrings("/xdg/cache/dev-env", initial.cache_dir);
+
+    const overridden = selectedLayout(paths, testLock("0.1.0"), .{
+        .opt_dir = "/new/opt",
+    });
+    try testing.expectEqualStrings("/x/bin", overridden.bin);
+    try testing.expectEqualStrings("/new/opt", overridden.opt);
+    try testing.expectEqualStrings("/x/cache", overridden.cache_dir);
 }
 
 test "diff with no receipt installs everything" {
@@ -330,6 +373,7 @@ test "diff installs and deactivates only the difference" {
         .installer_release = "0.1.0",
         .installer_path = "/x/dev-env-install",
         .platform = test_platform,
+        .install_layout = testLock("0.1.0").install_layout,
         .tools = &.{
             .{ .tool = "neovim", .kind = .archive, .version = "0.11.2" },
             .{ .tool = "tmux", .kind = .system, .version = "system" },
@@ -366,6 +410,7 @@ test "diff reinstalls all tools on release change" {
         .installer_release = "0.1.0",
         .installer_path = "/x/dev-env-install",
         .platform = test_platform,
+        .install_layout = testLock("0.1.0").install_layout,
         .tools = &.{
             .{ .tool = "neovim", .kind = .archive, .version = "0.10.0" },
         },
@@ -389,6 +434,7 @@ test "diff is empty when states match" {
         .installer_release = "0.1.0",
         .installer_path = "/x/dev-env-install",
         .platform = test_platform,
+        .install_layout = testLock("0.1.0").install_layout,
         .tools = &.{
             .{ .tool = "go", .kind = .archive, .version = "1.24.4" },
             .{ .tool = "neovim", .kind = .archive, .version = "0.11.2" },

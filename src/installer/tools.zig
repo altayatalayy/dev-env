@@ -159,6 +159,7 @@ pub const SourceBuild = struct {
     format: Archive.Format,
     strip_components: u32,
     build_dependencies: BuildDependencies = .{},
+    runtime_dependencies: BuildDependencies = .{},
     /// Run inside the extracted source tree. Executables resolve against the
     /// step PATH (layout bin dir plus active tool exports).
     build_steps: []const Step,

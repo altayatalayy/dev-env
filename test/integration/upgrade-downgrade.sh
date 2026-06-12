@@ -27,7 +27,7 @@ if ! "${DEV_ENV}" apply --config-conflict=backup; then
     exit 1
 fi
 if ! dev_env_json_assert equals "${INSTALLED_JSON}" installer_release 0.1.0; then exit 1; fi
-if ! test -d "${HOME}/.local/opt/tmux/0.1.0"; then
+if ! test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.1.0"; then
     echo "initial tmux opt dir missing" >&2
     exit 1
 fi
@@ -38,7 +38,7 @@ if ! "${DEV_ENV}" upgrade --config-conflict=backup; then
 fi
 if ! dev_env_json_assert equals "${LOCK_JSON}" installer_release 0.2.0; then exit 1; fi
 if ! dev_env_json_assert equals "${INSTALLED_JSON}" installer_release 0.2.0; then exit 1; fi
-if ! test -d "${HOME}/.local/opt/tmux/0.2.0"; then
+if ! test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.2.0"; then
     echo "upgraded tmux opt dir missing" >&2
     exit 1
 fi

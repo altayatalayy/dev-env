@@ -63,6 +63,9 @@ pub fn resolveWithDefs(
             },
             .source => |s| blk: {
                 try packages.add(alloc, pm, s.build_dependencies.forManager(pm));
+                if (req.include_runtime_dependencies) {
+                    try packages.add(alloc, pm, s.runtime_dependencies.forManager(pm));
+                }
                 break :blk .{
                     .tool = @tagName(id),
                     .kind = .source,
@@ -357,6 +360,42 @@ test "release plan exposes rust official installer on linux" {
     try testing.expect(resp.tool_actions[0].env_exports.len >= 3);
     try testing.expect(ids.contains(resp.system_packages.apt, "curl"));
     try testing.expect(ids.contains(resp.system_packages.apt, "libssl-dev"));
+}
+
+test "release plan exposes go runtime exports on linux" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const resp = try resolve(alloc, .{
+        .protocol = proto.version,
+        .platform = ubuntu,
+        .tools = &.{"go"},
+        .include_configs = false,
+    });
+
+    try testing.expectEqual(@as(usize, 1), resp.tool_actions.len);
+    try testing.expectEqualStrings("go", resp.tool_actions[0].tool);
+    try testing.expect(resp.tool_actions[0].env_exports.len >= 4);
+    try testing.expectEqualStrings("GOROOT", resp.tool_actions[0].env_exports[0].name);
+}
+
+test "release plan excludes runtime dependencies for source archive builds" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const resp = try resolve(alloc, .{
+        .protocol = proto.version,
+        .platform = ubuntu,
+        .tools = &.{"alacritty"},
+        .include_configs = false,
+        .include_runtime_dependencies = false,
+    });
+
+    try testing.expect(ids.contains(resp.system_packages.apt, "libfontconfig1-dev"));
+    try testing.expect(!ids.contains(resp.system_packages.apt, "libfontconfig1"));
+    try testing.expect(!ids.contains(resp.system_packages.apt, "desktop-file-utils"));
 }
 
 test "release plan selects the docker method per platform" {

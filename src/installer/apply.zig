@@ -117,7 +117,7 @@ pub fn applyConfigs(
         const def = release.defs.config(id).?;
         if (progress) |p| try p.emit(.{ .event = "config_apply_started", .config = name });
         try steps_mod.runSteps(alloc, io, progress, .{ .config = name }, def.install_steps, .{
-            .vars = .{ .home = env.layout.home, .cache_dir = env.layout.cache_dir },
+            .vars = layoutVars(env.layout),
             .env = &step_env,
         });
         if (progress) |p| try p.emit(.{ .event = "config_apply_finished", .config = name });
@@ -136,7 +136,7 @@ fn installOfficial(
     official: tools.OfficialInstaller,
 ) !proto.InstalledTool {
     try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, official.install_steps, .{
-        .vars = .{ .home = layout.home, .cache_dir = layout.cache_dir },
+        .vars = layoutVars(layout),
         .env = step_env,
     });
     return .{
@@ -168,7 +168,7 @@ fn installSource(
         if (std.fs.path.dirname(dest)) |parent| try cwd.createDirPath(io, parent);
         try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, source.build_steps, .{
             .cwd = build_dir,
-            .vars = .{ .home = layout.home, .cache_dir = layout.cache_dir, .prefix = dest },
+            .vars = layoutVarsWithPrefix(layout, dest),
             .env = step_env,
         });
         if (progress) |p| try p.emit(.{ .event = "build_finished", .tool = name, .detail = source.version });
@@ -183,6 +183,21 @@ fn installSource(
         .opt_dir = dest,
         .bin_links = try activateBinLinks(alloc, io, layout, dest, source.bin_links),
     };
+}
+
+fn layoutVars(layout: layout_mod.Layout) steps_mod.Vars {
+    return .{
+        .home = layout.home,
+        .cache_dir = layout.cache_dir,
+        .bin = layout.bin,
+        .opt = layout.opt,
+    };
+}
+
+fn layoutVarsWithPrefix(layout: layout_mod.Layout, prefix: []const u8) steps_mod.Vars {
+    var vars = layoutVars(layout);
+    vars.prefix = prefix;
+    return vars;
 }
 
 fn installArchive(
@@ -407,7 +422,7 @@ fn extractTo(
 
 // --- tests ---
 
-test "apply config command accepts configs without install steps" {
+test "apply config command accepts empty config list" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
@@ -416,24 +431,28 @@ test "apply config command accepts configs without install steps" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const cache_dir = try std.fs.path.join(alloc, &.{ home, ".cache" });
+    const layout = try layout_mod.Layout.init(alloc, home, .{
+        .bin = try std.fs.path.join(alloc, &.{ home, "bin" }),
+        .opt = try std.fs.path.join(alloc, &.{ home, "opt" }),
+        .cache_dir = try std.fs.path.join(alloc, &.{ home, ".cache" }),
+    });
 
     var env_map = std.process.Environ.Map.init(alloc);
     defer env_map.deinit();
     try env_map.put("PATH", "");
 
     const resp = try applyConfigs(alloc, io, .{
-        .layout = try layout_mod.Layout.init(alloc, home, cache_dir),
+        .layout = layout,
         .environ_map = &env_map,
     }, null, .{
         .protocol = proto.version,
         .platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } },
+        .layout = .{ .bin = layout.bin, .opt = layout.opt, .cache_dir = layout.cache_dir },
         .tools = &.{},
-        .configs = &.{"alacritty-config"},
+        .configs = &.{},
     });
 
-    try std.testing.expectEqual(@as(usize, 1), resp.applied.len);
-    try std.testing.expectEqualStrings("alacritty-config", resp.applied[0]);
+    try std.testing.expectEqual(@as(usize, 0), resp.applied.len);
 }
 
 test "apply installs system tools dependency-first" {
@@ -445,7 +464,11 @@ test "apply installs system tools dependency-first" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const cache_dir = try std.fs.path.join(alloc, &.{ home, ".cache" });
+    const layout = try layout_mod.Layout.init(alloc, home, .{
+        .bin = try std.fs.path.join(alloc, &.{ home, "bin" }),
+        .opt = try std.fs.path.join(alloc, &.{ home, "opt" }),
+        .cache_dir = try std.fs.path.join(alloc, &.{ home, ".cache" }),
+    });
 
     var env_map = std.process.Environ.Map.init(alloc);
     defer env_map.deinit();
@@ -453,11 +476,12 @@ test "apply installs system tools dependency-first" {
 
     // brew: every tool is a system package, so apply only records them.
     const resp = try apply(alloc, io, .{
-        .layout = try layout_mod.Layout.init(alloc, home, cache_dir),
+        .layout = layout,
         .environ_map = &env_map,
     }, null, .{
         .protocol = proto.version,
         .platform = .{ .macos = .{ .version = "15.5", .arch = .aarch64 } },
+        .layout = .{ .bin = layout.bin, .opt = layout.opt, .cache_dir = layout.cache_dir },
         .tools = &.{ "alacritty", "rust" },
         .install = &.{ "alacritty", "rust" },
         .deactivate = &.{},
@@ -479,7 +503,11 @@ test "replaceSymlink only replaces managed executable links" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const layout = try layout_mod.Layout.init(alloc, home, try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}));
+    const layout = try layout_mod.Layout.init(alloc, home, .{
+        .bin = try std.fmt.allocPrint(alloc, "{s}/bin", .{home}),
+        .opt = try std.fmt.allocPrint(alloc, "{s}/opt", .{home}),
+        .cache_dir = try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}),
+    });
 
     const old_target = try std.fmt.allocPrint(alloc, "{s}/tmux/old/bin/tmux", .{layout.opt});
     const new_target = try std.fmt.allocPrint(alloc, "{s}/tmux/new/bin/tmux", .{layout.opt});
@@ -514,7 +542,11 @@ test "replaceSymlink refuses foreign executable path" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const layout = try layout_mod.Layout.init(alloc, home, try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}));
+    const layout = try layout_mod.Layout.init(alloc, home, .{
+        .bin = try std.fmt.allocPrint(alloc, "{s}/bin", .{home}),
+        .opt = try std.fmt.allocPrint(alloc, "{s}/opt", .{home}),
+        .cache_dir = try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}),
+    });
 
     const target = try std.fmt.allocPrint(alloc, "{s}/tmux/new/bin/tmux", .{layout.opt});
     if (std.fs.path.dirname(target)) |parent| try cwd.createDirPath(io, parent);

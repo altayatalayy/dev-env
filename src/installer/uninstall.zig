@@ -47,7 +47,12 @@ pub fn uninstall(
                     try kept_system.append(alloc, name);
                 } else {
                     try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, o.uninstall_steps, .{
-                        .vars = .{ .home = env.layout.home, .cache_dir = env.layout.cache_dir },
+                        .vars = .{
+                            .home = env.layout.home,
+                            .cache_dir = env.layout.cache_dir,
+                            .bin = env.layout.bin,
+                            .opt = env.layout.opt,
+                        },
                         .env = &step_env,
                     });
                     try removed.append(alloc, name);

@@ -42,6 +42,7 @@ pub fn run(
         .platform = host,
         .tools = available,
         .include_configs = false,
+        .include_runtime_dependencies = false,
     });
     const selected_sources = try selectedSourceTools(alloc, discovery, options.tools);
     if (selected_sources.len == 0) {
@@ -54,6 +55,7 @@ pub fn run(
         .platform = host,
         .tools = selected_sources,
         .include_configs = false,
+        .include_runtime_dependencies = false,
     });
     const archive_targets = try sourceActions(alloc, resolved.tool_actions);
 
@@ -77,6 +79,7 @@ pub fn run(
     const applied = try client.applyTools(alloc, io, inst, .{
         .protocol = proto.version,
         .platform = host,
+        .layout = paths.installLayout(),
         .tools = resolved.resolved_tools,
         .install = resolved.resolved_tools,
         .deactivate = &.{},

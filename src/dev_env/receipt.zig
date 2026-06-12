@@ -13,6 +13,7 @@ pub const Receipt = struct {
     installer_release: []const u8,
     installer_path: []const u8,
     platform: platform.Platform,
+    install_layout: proto.InstallLayout,
     tools: []const proto.InstalledTool = &.{},
     configs: []const []const u8 = &.{},
     stow_packages: []const []const u8 = &.{},
@@ -83,6 +84,11 @@ test "receipt round trip" {
         .installer_release = "0.1.0",
         .installer_path = "/x/dev-env-install",
         .platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } },
+        .install_layout = .{
+            .bin = "/bin",
+            .opt = "/opt",
+            .cache_dir = "/cache",
+        },
         .tools = &.{
             .{ .tool = "neovim", .kind = .archive, .version = "0.11.2", .opt_dir = "/opt/neovim/0.11.2", .bin_links = &.{"/bin/nvim"} },
             .{ .tool = "tmux", .kind = .system, .version = "system" },
@@ -98,6 +104,7 @@ test "receipt round trip" {
     const loaded = (try load(alloc, io, path)).?;
     try std.testing.expectEqualStrings("0.1.0", loaded.installer_release);
     try std.testing.expectEqualStrings("/x/dev-env-install", loaded.installer_path);
+    try std.testing.expectEqualStrings("/opt", loaded.install_layout.opt);
     try std.testing.expect(loaded.platform.eql(original.platform));
     try std.testing.expectEqual(@as(usize, 2), loaded.tools.len);
     try std.testing.expectEqualStrings("neovim", loaded.tools[0].tool);
@@ -125,6 +132,11 @@ test "unsupported schema is rejected" {
         .installer_release = "0.1.0",
         .installer_path = "/x/dev-env-install",
         .platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } },
+        .install_layout = .{
+            .bin = "/bin",
+            .opt = "/opt",
+            .cache_dir = "/cache",
+        },
     };
     bad.schema = schema_version + 1;
     try save(alloc, io, path, bad);

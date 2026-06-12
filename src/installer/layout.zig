@@ -13,13 +13,21 @@ pub const Layout = struct {
     /// Downloaded archives, reused across runs.
     cache_dir: []const u8,
 
-    pub fn init(alloc: std.mem.Allocator, home: []const u8, cache_dir: []const u8) !Layout {
+    pub fn init(
+        alloc: std.mem.Allocator,
+        home: []const u8,
+        install: @import("shared").protocol.InstallLayout,
+    ) !Layout {
         if (!std.fs.path.isAbsolute(home)) return error.HomeNotAbsolute;
+        if (!std.fs.path.isAbsolute(install.bin)) return error.BinNotAbsolute;
+        if (!std.fs.path.isAbsolute(install.opt)) return error.OptNotAbsolute;
+        if (!std.fs.path.isAbsolute(install.cache_dir)) return error.CacheNotAbsolute;
+        _ = alloc;
         return .{
             .home = home,
-            .bin = try std.fmt.allocPrint(alloc, "{s}/.local/bin", .{home}),
-            .opt = try std.fmt.allocPrint(alloc, "{s}/.local/opt", .{home}),
-            .cache_dir = cache_dir,
+            .bin = install.bin,
+            .opt = install.opt,
+            .cache_dir = install.cache_dir,
         };
     }
 
@@ -48,14 +56,27 @@ test Layout {
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
 
-    const layout = try Layout.init(alloc, "/home/u", "/home/u/.cache/dev-env/downloads");
-    try std.testing.expectEqualStrings("/home/u/.local/bin", layout.bin);
-    try std.testing.expectEqualStrings("/home/u/.local/opt/go", try layout.toolDir(alloc, "go"));
+    const layout = try Layout.init(alloc, "/home/u", .{
+        .bin = "/xdg/bin",
+        .opt = "/xdg/share/dev-env/tools",
+        .cache_dir = "/xdg/cache/dev-env/downloads",
+    });
+    try std.testing.expectEqualStrings("/xdg/bin", layout.bin);
+    try std.testing.expectEqualStrings("/xdg/share/dev-env/tools/go", try layout.toolDir(alloc, "go"));
     try std.testing.expectEqualStrings(
-        "/home/u/.local/opt/go/1.24.4",
+        "/xdg/share/dev-env/tools/go/1.24.4",
         try layout.versionDir(alloc, "go", "1.24.4"),
     );
-    try std.testing.expectEqualStrings("/home/u/.local/bin/go", try layout.binLink(alloc, "go"));
+    try std.testing.expectEqualStrings("/xdg/bin/go", try layout.binLink(alloc, "go"));
 
-    try std.testing.expectError(error.HomeNotAbsolute, Layout.init(alloc, "relative", "/c"));
+    try std.testing.expectError(error.HomeNotAbsolute, Layout.init(alloc, "relative", .{
+        .bin = "/b",
+        .opt = "/o",
+        .cache_dir = "/c",
+    }));
+    try std.testing.expectError(error.OptNotAbsolute, Layout.init(alloc, "/home/u", .{
+        .bin = "/b",
+        .opt = "o",
+        .cache_dir = "/c",
+    }));
 }

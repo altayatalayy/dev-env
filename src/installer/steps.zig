@@ -20,11 +20,15 @@ const progress_mod = @import("progress.zig");
 pub const Vars = struct {
     home: []const u8,
     cache_dir: []const u8,
+    bin: []const u8,
+    opt: []const u8,
     prefix: ?[]const u8 = null,
 
     fn lookup(v: Vars, key: []const u8) ?[]const u8 {
         if (std.mem.eql(u8, key, "home")) return v.home;
         if (std.mem.eql(u8, key, "cache_dir")) return v.cache_dir;
+        if (std.mem.eql(u8, key, "bin")) return v.bin;
+        if (std.mem.eql(u8, key, "opt")) return v.opt;
         if (std.mem.eql(u8, key, "prefix")) return v.prefix;
         return null;
     }
@@ -87,7 +91,12 @@ pub fn stepEnviron(
     var env = try base.clone(alloc);
     errdefer env.deinit();
 
-    const vars: Vars = .{ .home = layout.home, .cache_dir = layout.cache_dir };
+    const vars: Vars = .{
+        .home = layout.home,
+        .cache_dir = layout.cache_dir,
+        .bin = layout.bin,
+        .opt = layout.opt,
+    };
     try prependPath(alloc, &env, layout.bin);
 
     for (active_tools) |name| {
@@ -242,10 +251,11 @@ test render {
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
 
-    const vars: Vars = .{ .home = "/h", .cache_dir = "/c", .prefix = "/p" };
+    const vars: Vars = .{ .home = "/h", .cache_dir = "/c", .bin = "/b", .opt = "/o", .prefix = "/p" };
     try testing.expectEqualStrings("plain", try render(alloc, "plain", vars));
-    try testing.expectEqualStrings("/h/.tmux", try render(alloc, "{home}/.tmux", vars));
+    try testing.expectEqualStrings("/h/.local/share/tmux", try render(alloc, "{home}/.local/share/tmux", vars));
     try testing.expectEqualStrings("--prefix=/p", try render(alloc, "--prefix={prefix}", vars));
+    try testing.expectEqualStrings("/o/tmux", try render(alloc, "{opt}/tmux", vars));
     try testing.expectEqualStrings("/c//h", try render(alloc, "{cache_dir}/{home}", vars));
     // Unknown keys survive so shell ${VAR} expansions are untouched.
     try testing.expectEqualStrings("echo ${ARCH}", try render(alloc, "echo ${ARCH}", vars));
@@ -257,7 +267,7 @@ test "render fails on prefix outside build steps" {
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
 
-    const vars: Vars = .{ .home = "/h", .cache_dir = "/c" };
+    const vars: Vars = .{ .home = "/h", .cache_dir = "/c", .bin = "/b", .opt = "/o" };
     // No prefix var: the marker is preserved rather than silently emptied.
     try testing.expectEqualStrings("{prefix}/bin", try render(alloc, "{prefix}/bin", vars));
 }
@@ -294,7 +304,7 @@ test "runStep streams output into the sink and fails on bad exit" {
     try env.put("PATH", "/usr/bin:/bin");
 
     const ctx: Context = .{
-        .vars = .{ .home = "/h", .cache_dir = "/c" },
+        .vars = .{ .home = "/h", .cache_dir = "/c", .bin = "/b", .opt = "/o" },
         .env = &env,
     };
 
@@ -339,7 +349,11 @@ test stepEnviron {
         },
     };
     const defs: resolver.Defs = .{ .tools = &test_tools };
-    const layout = try layout_mod.Layout.init(alloc, "/h", "/c");
+    const layout = try layout_mod.Layout.init(alloc, "/h", .{
+        .bin = "/h/.local/bin",
+        .opt = "/h/.local/share/dev-env/tools",
+        .cache_dir = "/c",
+    });
 
     var env = try stepEnviron(alloc, &base, layout, defs, .apt, &.{"rust"});
     defer env.deinit();

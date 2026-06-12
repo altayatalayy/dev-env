@@ -52,6 +52,7 @@ pub fn run(
     const response = try client.uninstall(alloc, io, installer_bin, .{
         .protocol = proto.version,
         .platform = receipt.platform,
+        .layout = receipt.install_layout,
         .tools = try receipt.toolNames(alloc),
     });
     for (response.removed) |name| std.log.info("removed {s}", .{name});
