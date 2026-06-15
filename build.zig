@@ -17,6 +17,18 @@ pub fn build(b: *std.Build) void {
     const build_opts = b.addOptions();
     build_opts.addOption([]const u8, "release", release);
 
+    const zig_cli = b.dependency("zig_cli", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const cli_mod = zig_cli.module("cli");
+
+    const zig_graph = b.dependency("zig_graph", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const graph_mod = zig_graph.module("graph");
+
     // Pack dotfiles/ into one zstd-compressed tar archive embedded in the installer.
     const tar_cmd = b.addSystemCommand(&.{
         "tar",
@@ -46,6 +58,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared_mod },
+            .{ .name = "cli", .module = cli_mod },
         },
     });
 
@@ -55,6 +68,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared_mod },
+            .{ .name = "cli", .module = cli_mod },
+            .{ .name = "graph", .module = graph_mod },
         },
     });
     installer_mod.addOptions("build_options", build_opts);

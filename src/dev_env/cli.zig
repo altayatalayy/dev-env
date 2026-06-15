@@ -1,39 +1,18 @@
 //! Command line parsing for dev-env.
 
 const std = @import("std");
+const cli_lib = @import("cli");
 const configs = @import("configs.zig");
 const planner = @import("planner.zig");
 
-pub const usage =
-    \\usage: dev-env <command> [options]
-    \\
-    \\commands:
-    \\  plan [options]              write lock.json and show the pending diff
-    \\  apply [options]             apply lock.json (creates a default lock if missing)
-    \\  upgrade [options]           move to the newest compatible installer and apply
-    \\  build [options]             source-build tools into release archives
-    \\  doctor                      check host, state, and installed tools
-    \\  uninstall [options]         remove managed tools, configs, and state
-    \\  clean                       remove inactive tool versions and old state
-    \\
-    \\build options:
-    \\  --release-root <dir>        directory to write archives and source-builds.json
-    \\  --tool <name>               build only this tool (repeatable)
-    \\
-    \\plan options:
-    \\  --installer <release>       lock a specific installer release
-    \\  --installer-path <path>     use a local dev-env-install executable
-    \\  --tools <a,b,...>           replace the tool selection
-    \\  --add <a,b,...>             add tools to the selection
-    \\  --remove <a,b,...>          remove tools from the selection
-    \\  --bin-dir <path>            executable link directory (absolute)
-    \\  --opt-dir <path>            versioned tool install directory (absolute)
-    \\  --cache-dir <path>          installer download/build cache (absolute)
-    \\
-    \\config conflict options (apply/upgrade/uninstall):
-    \\  --config-conflict=fail|backup|skip   default: fail
-    \\
-;
+/// The full `--help` screen. The command list is generated from `Command` (so
+/// it can never drift from the union), while `footer` documents the per-command
+/// options — those are parsed by hand below, so their flag names don't all match
+/// struct fields and can't be derived safely.
+pub const usage = cli_lib.help(Command, "dev-env");
+
+/// True when argv (pass the slice after the program name) asks for help.
+pub const wantsHelp = cli_lib.helpRequested;
 
 pub const Command = union(enum) {
     plan: Plan,
@@ -43,6 +22,37 @@ pub const Command = union(enum) {
     doctor,
     uninstall: Apply,
     clean,
+
+    pub const about = "dev-env — reproducible developer environment manager";
+
+    pub const descriptions = .{
+        .plan = "write lock.json and show the pending diff",
+        .apply = "apply lock.json (creates a default lock if missing)",
+        .upgrade = "move to the newest compatible installer and apply",
+        .build = "source-build tools into release archives",
+        .doctor = "check host, state, and installed tools",
+        .uninstall = "remove managed tools, configs, and state",
+        .clean = "remove inactive tool versions and old state",
+    };
+
+    pub const footer =
+        \\build options:
+        \\  --release-root <dir>        directory to write archives and source-builds.json
+        \\  --tool <name>               build only this tool (repeatable)
+        \\
+        \\plan options:
+        \\  --installer <release>       lock a specific installer release
+        \\  --installer-path <path>     use a local dev-env-install executable
+        \\  --tools <a,b,...>           replace the tool selection
+        \\  --add <a,b,...>             add tools to the selection
+        \\  --remove <a,b,...>          remove tools from the selection
+        \\  --bin-dir <path>            executable link directory (absolute)
+        \\  --opt-dir <path>            versioned tool install directory (absolute)
+        \\  --cache-dir <path>          installer download/build cache (absolute)
+        \\
+        \\config conflict options (apply/upgrade/uninstall):
+        \\  --config-conflict=fail|backup|skip   default: fail
+    ;
 
     pub const Plan = struct {
         installer: ?[]const u8 = null,
@@ -72,35 +82,27 @@ pub const Command = union(enum) {
 
 pub const Error = error{ InvalidArguments, OutOfMemory };
 
-pub fn parse(alloc: std.mem.Allocator, args: []const []const u8) Error!Command {
+const Verb = enum { plan, apply, upgrade, build, doctor, uninstall, clean };
+
+pub fn parse(alloc: std.mem.Allocator, args: []const [:0]const u8) Error!Command {
     if (args.len == 0) return fail("missing command", .{});
-    const command = args[0];
     const rest = args[1..];
 
-    if (std.mem.eql(u8, command, "plan")) {
-        return .{ .plan = try parsePlan(alloc, rest) };
-    }
-    if (std.mem.eql(u8, command, "apply")) {
-        return .{ .apply = try parseApply(rest) };
-    }
-    if (std.mem.eql(u8, command, "upgrade")) {
-        return .{ .upgrade = try parseApply(rest) };
-    }
-    if (std.mem.eql(u8, command, "build")) {
-        return .{ .build = try parseBuild(alloc, rest) };
-    }
-    if (std.mem.eql(u8, command, "doctor")) {
-        try expectNoArgs(command, rest);
-        return .doctor;
-    }
-    if (std.mem.eql(u8, command, "uninstall")) {
-        return .{ .uninstall = .{ .policy = try parsePolicy(rest) } };
-    }
-    if (std.mem.eql(u8, command, "clean")) {
-        try expectNoArgs(command, rest);
-        return .clean;
-    }
-    return fail("unknown command: {s}", .{command});
+    return switch (cli_lib.command(Verb, args[0]) catch return fail("unknown command: {s}", .{args[0]})) {
+        .plan => .{ .plan = try parsePlan(alloc, rest) },
+        .apply => .{ .apply = try parseApply(rest) },
+        .upgrade => .{ .upgrade = try parseApply(rest) },
+        .build => .{ .build = try parseBuild(alloc, rest) },
+        .doctor => blk: {
+            try expectNoArgs("doctor", rest);
+            break :blk .doctor;
+        },
+        .uninstall => .{ .uninstall = .{ .policy = try parsePolicy(rest) } },
+        .clean => blk: {
+            try expectNoArgs("clean", rest);
+            break :blk .clean;
+        },
+    };
 }
 
 fn fail(comptime format: []const u8, args: anytype) error{InvalidArguments} {
@@ -108,74 +110,44 @@ fn fail(comptime format: []const u8, args: anytype) error{InvalidArguments} {
     return error.InvalidArguments;
 }
 
-fn expectNoArgs(command: []const u8, rest: []const []const u8) error{InvalidArguments}!void {
+fn expectNoArgs(command: []const u8, rest: []const [:0]const u8) error{InvalidArguments}!void {
     if (rest.len != 0) return fail("{s} takes no arguments", .{command});
 }
 
-const Flag = struct {
-    name: []const u8,
-    value: ?[]const u8,
-};
-
-/// Accepts --flag=value and --flag value forms; advances `index` past any
-/// consumed value argument.
-fn nextFlag(args: []const []const u8, index: *usize) error{InvalidArguments}!Flag {
-    const arg = args[index.*];
-    index.* += 1;
-    if (!std.mem.startsWith(u8, arg, "--")) {
-        return fail("unexpected argument: {s}", .{arg});
-    }
-    if (std.mem.indexOfScalar(u8, arg, '=')) |eq| {
-        return .{ .name = arg[0..eq], .value = arg[eq + 1 ..] };
-    }
-    return .{ .name = arg, .value = null };
-}
-
-fn flagValue(flag: Flag, args: []const []const u8, index: *usize) error{InvalidArguments}![]const u8 {
-    if (flag.value) |value| return value;
-    if (index.* >= args.len or std.mem.startsWith(u8, args[index.*], "--")) {
-        return fail("{s} requires a value", .{flag.name});
-    }
-    const value = args[index.*];
-    index.* += 1;
-    return value;
-}
-
 fn splitNames(alloc: std.mem.Allocator, value: []const u8) ![]const []const u8 {
-    var names: std.ArrayList([]const u8) = .empty;
-    var it = std.mem.tokenizeScalar(u8, value, ',');
-    while (it.next()) |name| try names.append(alloc, name);
-    return names.items;
+    return cli_lib.splitList(alloc, value);
 }
 
-fn parsePlan(alloc: std.mem.Allocator, args: []const []const u8) Error!Command.Plan {
+fn parsePlan(alloc: std.mem.Allocator, args: []const [:0]const u8) Error!Command.Plan {
     var plan: Command.Plan = .{};
     var add: std.ArrayList([]const u8) = .empty;
     var remove: std.ArrayList([]const u8) = .empty;
 
-    var index: usize = 0;
-    while (index < args.len) {
-        const flag = try nextFlag(args, &index);
-        if (std.mem.eql(u8, flag.name, "--installer")) {
-            plan.installer = try flagValue(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--installer-path")) {
-            plan.installer_path = try absolutePathOption(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--tools")) {
-            plan.tools = try splitNames(alloc, try flagValue(flag, args, &index));
-        } else if (std.mem.eql(u8, flag.name, "--add")) {
-            try add.appendSlice(alloc, try splitNames(alloc, try flagValue(flag, args, &index)));
-        } else if (std.mem.eql(u8, flag.name, "--remove")) {
-            try remove.appendSlice(alloc, try splitNames(alloc, try flagValue(flag, args, &index)));
-        } else if (std.mem.eql(u8, flag.name, "--bin-dir")) {
-            plan.bin_dir = try absolutePathOption(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--opt-dir")) {
-            plan.opt_dir = try absolutePathOption(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--cache-dir")) {
-            plan.cache_dir = try absolutePathOption(flag, args, &index);
-        } else {
-            return fail("unknown plan option: {s}", .{flag.name});
-        }
-    }
+    var parser = cli_lib.Parser.init(args);
+    while (parser.next()) |arg| switch (arg) {
+        .positional => |pos| return fail("unexpected argument: {s}", .{pos}),
+        .flag => |flag| {
+            if (flag.is("--installer")) {
+                plan.installer = try flagValue(&parser, flag);
+            } else if (flag.is("--installer-path")) {
+                plan.installer_path = try absolutePathOption(&parser, flag);
+            } else if (flag.is("--tools")) {
+                plan.tools = try splitNames(alloc, try flagValue(&parser, flag));
+            } else if (flag.is("--add")) {
+                try add.appendSlice(alloc, try splitNames(alloc, try flagValue(&parser, flag)));
+            } else if (flag.is("--remove")) {
+                try remove.appendSlice(alloc, try splitNames(alloc, try flagValue(&parser, flag)));
+            } else if (flag.is("--bin-dir")) {
+                plan.bin_dir = try absolutePathOption(&parser, flag);
+            } else if (flag.is("--opt-dir")) {
+                plan.opt_dir = try absolutePathOption(&parser, flag);
+            } else if (flag.is("--cache-dir")) {
+                plan.cache_dir = try absolutePathOption(&parser, flag);
+            } else {
+                return fail("unknown plan option: {s}", .{flag.name});
+            }
+        },
+    };
     if (plan.installer != null and plan.installer_path != null) {
         return fail("--installer and --installer-path are mutually exclusive", .{});
     }
@@ -185,73 +157,98 @@ fn parsePlan(alloc: std.mem.Allocator, args: []const []const u8) Error!Command.P
     return plan;
 }
 
-fn parseApply(args: []const []const u8) Error!Command.Apply {
+fn parseApply(args: []const [:0]const u8) Error!Command.Apply {
     var apply: Command.Apply = .{};
-    var index: usize = 0;
-    while (index < args.len) {
-        const flag = try nextFlag(args, &index);
-        if (std.mem.eql(u8, flag.name, "--installer-path")) {
-            apply.installer_path = try absolutePathOption(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--config-conflict")) {
-            const value = try flagValue(flag, args, &index);
-            apply.policy = std.meta.stringToEnum(configs.ConflictPolicy, value) orelse {
-                return fail("invalid --config-conflict value: {s}", .{value});
-            };
-        } else {
-            return fail("unknown option: {s}", .{flag.name});
-        }
-    }
+    var parser = cli_lib.Parser.init(args);
+    while (parser.next()) |arg| switch (arg) {
+        .positional => |pos| return fail("unexpected argument: {s}", .{pos}),
+        .flag => |flag| {
+            if (flag.is("--installer-path")) {
+                apply.installer_path = try absolutePathOption(&parser, flag);
+            } else if (flag.is("--config-conflict")) {
+                apply.policy = parser.enumValue(configs.ConflictPolicy, flag) catch |err| {
+                    if (err == error.InvalidValue) {
+                        return fail("invalid --config-conflict value: {s}", .{parser.offending});
+                    }
+                    return flagError(&parser, err);
+                };
+            } else {
+                return fail("unknown option: {s}", .{flag.name});
+            }
+        },
+    };
     return apply;
 }
 
-fn parseBuild(alloc: std.mem.Allocator, args: []const []const u8) Error!Command.Build {
+fn parseBuild(alloc: std.mem.Allocator, args: []const [:0]const u8) Error!Command.Build {
     var build: Command.Build = .{};
     var tools: std.ArrayList([]const u8) = .empty;
 
-    var index: usize = 0;
-    while (index < args.len) {
-        const flag = try nextFlag(args, &index);
-        if (std.mem.eql(u8, flag.name, "--release-root")) {
-            build.release_root = try flagValue(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--installer-path")) {
-            build.installer_path = try absolutePathOption(flag, args, &index);
-        } else if (std.mem.eql(u8, flag.name, "--tool")) {
-            try tools.append(alloc, try flagValue(flag, args, &index));
-        } else if (std.mem.eql(u8, flag.name, "--platform") or
-            std.mem.eql(u8, flag.name, "--platform-version") or
-            std.mem.eql(u8, flag.name, "--arch"))
-        {
-            return fail("{s} is not allowed: build always targets the host it runs on", .{flag.name});
-        } else {
-            return fail("unknown build option: {s}", .{flag.name});
-        }
-    }
+    var parser = cli_lib.Parser.init(args);
+    while (parser.next()) |arg| switch (arg) {
+        .positional => |pos| return fail("unexpected argument: {s}", .{pos}),
+        .flag => |flag| {
+            if (flag.is("--release-root")) {
+                build.release_root = try flagValue(&parser, flag);
+            } else if (flag.is("--installer-path")) {
+                build.installer_path = try absolutePathOption(&parser, flag);
+            } else if (flag.is("--tool")) {
+                try tools.append(alloc, try flagValue(&parser, flag));
+            } else if (flag.is("--platform") or flag.is("--platform-version") or flag.is("--arch")) {
+                return fail("{s} is not allowed: build always targets the host it runs on", .{flag.name});
+            } else {
+                return fail("unknown build option: {s}", .{flag.name});
+            }
+        },
+    };
 
     build.tools = tools.items;
     return build;
 }
 
-fn absolutePathOption(flag: Flag, args: []const []const u8, index: *usize) Error![]const u8 {
-    const value = try flagValue(flag, args, index);
+fn flagValue(parser: *cli_lib.Parser, flag: cli_lib.Flag) Error![]const u8 {
+    return parser.value(flag) catch |err| flagError(parser, err);
+}
+
+fn flagError(parser: *cli_lib.Parser, err: cli_lib.ParseError) error{InvalidArguments} {
+    return switch (err) {
+        error.MissingValue => fail("{s} requires a value", .{parser.offending}),
+        error.InvalidValue => fail("invalid value: {s}", .{parser.offending}),
+        error.DuplicateFlag => fail("duplicate option: {s}", .{parser.offending}),
+        error.UnknownFlag => fail("unknown option: {s}", .{parser.offending}),
+        error.UnexpectedArgument => fail("unexpected argument: {s}", .{parser.offending}),
+        error.UnknownCommand => fail("unknown command: {s}", .{parser.offending}),
+        error.MissingCommand => fail("missing command: {s}", .{parser.offending}),
+        error.MissingFlag => fail("missing option: {s}", .{parser.offending}),
+        error.MissingArgument => fail("missing argument: {s}", .{parser.offending}),
+    };
+}
+
+fn absolutePathOption(parser: *cli_lib.Parser, flag: cli_lib.Flag) Error![]const u8 {
+    const value = try flagValue(parser, flag);
     if (!std.fs.path.isAbsolute(value)) return fail("{s} requires an absolute path", .{flag.name});
     return value;
 }
 
-fn parsePolicy(args: []const []const u8) error{InvalidArguments}!configs.ConflictPolicy {
+fn parsePolicy(args: []const [:0]const u8) error{InvalidArguments}!configs.ConflictPolicy {
     var policy: configs.ConflictPolicy = .fail;
 
-    var index: usize = 0;
-    while (index < args.len) {
-        const flag = try nextFlag(args, &index);
-        if (std.mem.eql(u8, flag.name, "--config-conflict")) {
-            const value = try flagValue(flag, args, &index);
-            policy = std.meta.stringToEnum(configs.ConflictPolicy, value) orelse {
-                return fail("invalid --config-conflict value: {s}", .{value});
-            };
-        } else {
-            return fail("unknown option: {s}", .{flag.name});
-        }
-    }
+    var parser = cli_lib.Parser.init(args);
+    while (parser.next()) |arg| switch (arg) {
+        .positional => |pos| return fail("unexpected argument: {s}", .{pos}),
+        .flag => |flag| {
+            if (flag.is("--config-conflict")) {
+                policy = parser.enumValue(configs.ConflictPolicy, flag) catch |err| {
+                    if (err == error.InvalidValue) {
+                        return fail("invalid --config-conflict value: {s}", .{parser.offending});
+                    }
+                    return flagError(&parser, err);
+                };
+            } else {
+                return fail("unknown option: {s}", .{flag.name});
+            }
+        },
+    };
 
     return policy;
 }

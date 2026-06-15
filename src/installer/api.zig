@@ -149,7 +149,7 @@ test metadata {
     try std.testing.expect(meta.platforms.len > 0);
 
     // Release data must form a valid dependency graph.
-    try @import("resolver.zig").validate(release.defs);
+    try @import("resolver.zig").validate(alloc, release.defs);
 }
 
 fn countConfigs() usize {

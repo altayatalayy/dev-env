@@ -1,0 +1,21 @@
+.{
+    .name = .dev_env,
+    .version = "0.1.0",
+    .fingerprint = 0x5354b8116f31ff68,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_cli = .{
+            .path = "../zig-cli",
+        },
+        .zig_graph = .{
+            .path = "../zig-graph",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "README.md",
+        "dotfiles",
+        "src",
+    },
+}

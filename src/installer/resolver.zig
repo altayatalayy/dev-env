@@ -5,11 +5,20 @@
 //! packages are not graph nodes. Resolution is package-manager aware because
 //! a tool's dependencies belong to the install method selected for the host
 //! (alacritty needs rust only where it is built from source).
+//!
+//! Cycle detection and install ordering are backed by the zig-graph library;
+//! an edge `from -> to` means `from` must be installed/applied before `to`.
 
 const std = @import("std");
+const dag = @import("graph");
 const shared = @import("shared");
 const platform = shared.platform;
 const tools = @import("tools.zig");
+
+const ToolNode = struct { id: std.meta.Tag(tools.ToolId) };
+const ConfigNode = struct { id: std.meta.Tag(tools.ConfigId) };
+const ToolDag = dag.Dag(ToolNode, null);
+const ConfigDag = dag.Dag(ConfigNode, null);
 
 pub const Defs = struct {
     tools: []const tools.ToolDef,
@@ -37,6 +46,8 @@ pub const GraphError = error{
     DependencyCycle,
 };
 
+pub const ValidateError = GraphError || error{OutOfMemory};
+
 pub const Error = GraphError || error{ UnknownTool, UnsupportedPlatform, OutOfMemory };
 
 pub fn toolByName(defs: Defs, name: []const u8) error{UnknownTool}!tools.ToolId {
@@ -58,7 +69,10 @@ pub fn configByName(defs: Defs, name: []const u8) error{UnknownConfig}!tools.Con
 /// Rejects graphs with dependencies on undefined tools/configs, self
 /// dependencies, and direct or indirect cycles in either graph. Method-level
 /// tool dependencies are validated across every package-manager domain.
-pub fn validate(defs: Defs) GraphError!void {
+pub fn validate(alloc: std.mem.Allocator, defs: Defs) ValidateError!void {
+    // Existence and ownership checks the dependency graphs cannot express:
+    // every referenced id must be defined (across all methods, not just the
+    // one a package manager selects) and a config must belong to its tool.
     for (defs.tools) |t| {
         for (t.methods) |m| {
             for (m.requires_tools) |dep| {
@@ -78,61 +92,66 @@ pub fn validate(defs: Defs) GraphError!void {
         }
     }
 
-    var config_states: std.EnumMap(tools.ConfigId, VisitState) = .{};
+    var config_graph = ConfigDag.init(alloc);
+    defer config_graph.deinit();
+    for (std.enums.values(tools.ConfigId)) |id| {
+        config_graph.addNode(.{ .id = @intFromEnum(id) }) catch |err| switch (err) {
+            error.DuplicateNodeId => unreachable, // enum values are unique
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+    }
     for (defs.tools) |t| {
         for (t.configs) |c| {
-            try visitConfig(defs, c.id, &config_states);
+            for (c.requires_configs) |dep| {
+                try addDependencyEdge(
+                    ConfigDag,
+                    &config_graph,
+                    @intFromEnum(dep),
+                    @intFromEnum(c.id),
+                );
+            }
         }
     }
 
     for (std.enums.values(platform.PackageManager)) |pm| {
-        var tool_states: std.EnumMap(tools.ToolId, VisitState) = .{};
+        var tool_graph = ToolDag.init(alloc);
+        defer tool_graph.deinit();
+        for (std.enums.values(tools.ToolId)) |id| {
+            tool_graph.addNode(.{ .id = @intFromEnum(id) }) catch |err| switch (err) {
+                error.DuplicateNodeId => unreachable, // enum values are unique
+                error.OutOfMemory => return error.OutOfMemory,
+            };
+        }
         for (defs.tools) |t| {
-            try visitTool(defs, pm, t.id, &tool_states);
-        }
-    }
-}
-
-const VisitState = enum { visiting, done };
-
-fn visitConfig(
-    defs: Defs,
-    id: tools.ConfigId,
-    states: *std.EnumMap(tools.ConfigId, VisitState),
-) GraphError!void {
-    switch (states.get(id) orelse {
-        states.put(id, .visiting);
-        const c = defs.config(id).?;
-        for (c.requires_configs) |dep| {
-            try visitConfig(defs, dep, states);
-        }
-        states.put(id, .done);
-        return;
-    }) {
-        .visiting => return error.DependencyCycle,
-        .done => return,
-    }
-}
-
-fn visitTool(
-    defs: Defs,
-    pm: platform.PackageManager,
-    id: tools.ToolId,
-    states: *std.EnumMap(tools.ToolId, VisitState),
-) GraphError!void {
-    switch (states.get(id) orelse {
-        states.put(id, .visiting);
-        if (defs.tool(id).?.method(pm)) |method| {
+            const method = t.method(pm) orelse continue;
             for (method.requires_tools) |dep| {
-                try visitTool(defs, pm, dep, states);
+                try addDependencyEdge(
+                    ToolDag,
+                    &tool_graph,
+                    @intFromEnum(dep),
+                    @intFromEnum(t.id),
+                );
             }
         }
-        states.put(id, .done);
-        return;
-    }) {
-        .visiting => return error.DependencyCycle,
-        .done => return,
     }
+}
+
+/// Adds `from -> to` (`from` before `to`), mapping zig-graph edge errors onto
+/// resolver errors. A duplicate edge means the same dependency was stated
+/// twice, which is harmless.
+fn addDependencyEdge(
+    comptime Graph: type,
+    graph: *Graph,
+    from: Graph.NodeId,
+    to: Graph.NodeId,
+) ValidateError!void {
+    graph.addEdge(from, to) catch |err| switch (err) {
+        error.DuplicateEdge => {},
+        error.SelfEdge => return error.SelfDependency,
+        error.MissingNode => return error.UnknownDependency,
+        error.CycleDetected => return error.DependencyCycle,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
 }
 
 pub const Resolution = struct {
@@ -150,7 +169,7 @@ pub fn resolve(
     selected: []const tools.ToolId,
     include_configs: bool,
 ) Error!Resolution {
-    try validate(defs);
+    try validate(alloc, defs);
 
     var tool_set: std.EnumSet(tools.ToolId) = .initEmpty();
     for (selected) |id| {
@@ -211,42 +230,48 @@ pub fn resolve(
 }
 
 /// Orders tool names so every tool comes after its method-level dependencies
-/// (a source build's toolchain installs before the build runs).
+/// (a source build's toolchain installs before the build runs). Independent
+/// tools keep their request order.
 pub fn installOrder(
     alloc: std.mem.Allocator,
     defs: Defs,
     pm: platform.PackageManager,
     names: []const []const u8,
 ) Error![]const []const u8 {
-    var requested: std.EnumSet(tools.ToolId) = .initEmpty();
-    for (names) |name| requested.insert(try toolByName(defs, name));
+    var graph = ToolDag.init(alloc);
+    defer graph.deinit();
 
-    var ordered: std.ArrayList([]const u8) = .empty;
-    errdefer ordered.deinit(alloc);
-    var emitted: std.EnumSet(tools.ToolId) = .initEmpty();
     for (names) |name| {
         const id = try toolByName(defs, name);
-        try emitOrdered(alloc, defs, pm, id, &requested, &emitted, &ordered);
+        graph.addNode(.{ .id = @intFromEnum(id) }) catch |err| switch (err) {
+            error.DuplicateNodeId => {}, // requesting a tool twice is harmless
+            error.OutOfMemory => return error.OutOfMemory,
+        };
     }
-    return ordered.toOwnedSlice(alloc);
-}
 
-fn emitOrdered(
-    alloc: std.mem.Allocator,
-    defs: Defs,
-    pm: platform.PackageManager,
-    id: tools.ToolId,
-    requested: *const std.EnumSet(tools.ToolId),
-    emitted: *std.EnumSet(tools.ToolId),
-    ordered: *std.ArrayList([]const u8),
-) Error!void {
-    if (emitted.contains(id) or !requested.contains(id)) return;
-    emitted.insert(id);
-    const method = defs.tool(id).?.method(pm) orelse return error.UnsupportedPlatform;
-    for (method.requires_tools) |dep| {
-        try emitOrdered(alloc, defs, pm, dep, requested, emitted, ordered);
+    // Edges only between requested tools: dependencies that are not part of
+    // the request are not invented.
+    for (names) |name| {
+        const id = try toolByName(defs, name);
+        const method = defs.tool(id).?.method(pm) orelse return error.UnsupportedPlatform;
+        for (method.requires_tools) |dep| {
+            const dep_id: ToolDag.NodeId = @intFromEnum(dep);
+            if (graph.node(dep_id) == null) continue;
+            try addDependencyEdge(ToolDag, &graph, dep_id, @intFromEnum(id));
+        }
     }
-    try ordered.append(alloc, @tagName(id));
+
+    const sorted = graph.topologicalSort() catch |err| switch (err) {
+        error.CycleDetected => return error.DependencyCycle,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    defer alloc.free(sorted);
+
+    const ordered = try alloc.alloc([]const u8, sorted.len);
+    for (sorted, ordered) |id, *out| {
+        out.* = @tagName(@as(tools.ToolId, @enumFromInt(id)));
+    }
+    return ordered;
 }
 
 // --- tests ---
@@ -419,12 +444,12 @@ test installOrder {
     const defs: Defs = .{ .tools = &test_tools };
 
     // Alphabetical request order (what dev-env sends) must come out
-    // dependency-first.
+    // dependency-first; tools with no unmet dependencies keep request order.
     const ordered = try installOrder(alloc, defs, .apt, &.{ "alacritty", "neovim", "rust", "zig" });
     try testing.expectEqual(@as(usize, 4), ordered.len);
     try testing.expectEqualStrings("rust", ordered[0]);
-    try testing.expectEqualStrings("alacritty", ordered[1]);
-    try testing.expectEqualStrings("zig", ordered[2]);
+    try testing.expectEqualStrings("zig", ordered[1]);
+    try testing.expectEqualStrings("alacritty", ordered[2]);
     try testing.expectEqualStrings("neovim", ordered[3]);
 
     // Dependencies that are not part of the request are not invented.
@@ -445,13 +470,13 @@ test "unknown dependency" {
     };
     const partial_tools = [_]tools.ToolDef{testToolWithConfigs(.neovim, &configs)};
     const defs: Defs = .{ .tools = &partial_tools };
-    try testing.expectError(error.UnknownDependency, validate(defs));
+    try testing.expectError(error.UnknownDependency, validate(testing.allocator, defs));
 }
 
 test "unknown method dependency" {
     const partial_tools = [_]tools.ToolDef{testSourceTool(.alacritty, &.{.rust})};
     const defs: Defs = .{ .tools = &partial_tools };
-    try testing.expectError(error.UnknownDependency, validate(defs));
+    try testing.expectError(error.UnknownDependency, validate(testing.allocator, defs));
 }
 
 test "self dependency" {
@@ -462,10 +487,10 @@ test "self dependency" {
         testToolWithConfigs(.tmux, &configs),
     };
     const defs: Defs = .{ .tools = &test_tools };
-    try testing.expectError(error.SelfDependency, validate(defs));
+    try testing.expectError(error.SelfDependency, validate(testing.allocator, defs));
 
     const self_method = [_]tools.ToolDef{testSourceTool(.zig, &.{.zig})};
-    try testing.expectError(error.SelfDependency, validate(.{ .tools = &self_method }));
+    try testing.expectError(error.SelfDependency, validate(testing.allocator, .{ .tools = &self_method }));
 }
 
 test "direct config cycle" {
@@ -480,7 +505,7 @@ test "direct config cycle" {
         testToolWithConfigs(.tmux, &tmux_configs),
     };
     const defs: Defs = .{ .tools = &test_tools };
-    try testing.expectError(error.DependencyCycle, validate(defs));
+    try testing.expectError(error.DependencyCycle, validate(testing.allocator, defs));
 }
 
 test "indirect config cycle" {
@@ -499,7 +524,7 @@ test "indirect config cycle" {
         testToolWithConfigs(.alacritty, &alacritty_configs),
     };
     const defs: Defs = .{ .tools = &test_tools };
-    try testing.expectError(error.DependencyCycle, validate(defs));
+    try testing.expectError(error.DependencyCycle, validate(testing.allocator, defs));
 }
 
 test "tool method cycle" {
@@ -508,5 +533,5 @@ test "tool method cycle" {
         testSourceTool(.go, &.{.rust}),
     };
     const defs: Defs = .{ .tools = &test_tools };
-    try testing.expectError(error.DependencyCycle, validate(defs));
+    try testing.expectError(error.DependencyCycle, validate(testing.allocator, defs));
 }

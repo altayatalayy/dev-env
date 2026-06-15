@@ -26,17 +26,19 @@ fn run(init: std.process.Init) !void {
     const alloc = @field(init, "arena").allocator();
     const io = init.io;
 
-    var argv: std.ArrayList([]const u8) = .empty;
-    var args = init.minimal.args.iterate();
-    _ = args.skip();
-    while (args.next()) |arg| try argv.append(alloc, arg);
+    const argv = try init.minimal.args.toSlice(alloc);
 
-    if (argv.items.len == 0) {
-        try printUsage(io);
+    if (argv.len <= 1) {
+        try printUsage(io, std.Io.File.stderr());
         return error.InvalidArguments;
     }
+    // `dev-env --help` and `dev-env <command> --help` print the help screen.
+    if (cli.wantsHelp(argv[1..])) {
+        try printUsage(io, std.Io.File.stdout());
+        return;
+    }
 
-    const command = try cli.parse(alloc, argv.items);
+    const command = try cli.parse(alloc, argv[1..]);
     const paths = try pathsFromEnv(alloc, init.environ_map);
 
     switch (command) {
@@ -67,9 +69,9 @@ fn run(init: std.process.Init) !void {
     }
 }
 
-fn printUsage(io: std.Io) !void {
+fn printUsage(io: std.Io, file: std.Io.File) !void {
     var buffer: [4096]u8 = undefined;
-    var writer = std.Io.File.stderr().writer(io, &buffer);
+    var writer = file.writer(io, &buffer);
     try writer.interface.writeAll(cli.usage);
     try writer.interface.flush();
 }

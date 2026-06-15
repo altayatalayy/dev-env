@@ -3,34 +3,39 @@
 //! reserved for line-delimited JSON protocol messages.
 
 const std = @import("std");
+const cli = @import("cli");
 const shared = @import("shared");
 const proto = shared.protocol;
 const api = @import("api.zig");
 
 pub fn main(init: std.process.Init) u8 {
-    run(init) catch |err| {
-        std.log.err("dev-env-install: {t}", .{err});
-        return 1;
-    };
-    return 0;
-}
-
-fn run(init: std.process.Init) !void {
     const alloc = @field(init, "arena").allocator();
     const io = init.io;
 
-    var args = init.minimal.args.iterate();
-    _ = args.skip();
-    const cmd_name = args.next() orelse return error.MissingCommand;
-    const cmd = std.meta.stringToEnum(proto.Command, cmd_name) orelse {
-        std.log.err("dev-env-install: unknown command: {s}", .{cmd_name});
-        return error.UnknownCommand;
+    const argv = init.minimal.args.toSlice(alloc) catch |err| {
+        std.log.err("dev-env-install: {t}", .{err});
+        return 1;
+    };
+    if (argv.len <= 1) {
+        std.log.err("dev-env-install: missing command", .{});
+        return 1;
+    }
+
+    const cmd = cli.command(proto.Command, argv[1]) catch {
+        std.log.err("dev-env-install: unknown command: {s}", .{argv[1]});
+        return 1;
     };
 
-    const env = try loadEnv(alloc, init.environ_map);
+    const env = loadEnv(alloc, init.environ_map) catch |err| {
+        std.log.err("dev-env-install: {t}", .{err});
+        return 1;
+    };
     var stdin_buffer: [4096]u8 = undefined;
     var stdin_reader = std.Io.File.stdin().reader(io, &stdin_buffer);
-    const input = try stdin_reader.interface.allocRemaining(alloc, .unlimited);
+    const input = stdin_reader.interface.allocRemaining(alloc, .unlimited) catch |err| {
+        std.log.err("dev-env-install: {t}", .{err});
+        return 1;
+    };
 
     var stdout_buffer: [4096]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
@@ -38,32 +43,103 @@ fn run(init: std.process.Init) !void {
     var progress: api.Progress = .{ .alloc = alloc, .writer = out, .command = cmd };
 
     switch (cmd) {
-        .metadata => try proto.writeFinal(alloc, out, cmd, try api.metadata(alloc)),
+        .metadata => {
+            const response = api.metadata(alloc) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+        },
         .resolve => {
-            const req = try proto.parseRequest(proto.ResolveRequest, alloc, cmd, input);
-            try proto.writeFinal(alloc, out, cmd, try api.resolve(alloc, &progress, req));
+            const req = proto.parseRequest(proto.ResolveRequest, alloc, cmd, input) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            const response = api.resolve(alloc, &progress, req) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
         },
         .apply => {
-            const req = try proto.parseRequest(proto.ApplyRequest, alloc, cmd, input);
-            try proto.writeFinal(alloc, out, cmd, try api.apply(alloc, io, env, &progress, req));
+            const req = proto.parseRequest(proto.ApplyRequest, alloc, cmd, input) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            const response = api.apply(alloc, io, env, &progress, req) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
         },
         .verify => {
-            const req = try proto.parseRequest(proto.VerifyRequest, alloc, cmd, input);
-            try proto.writeFinal(alloc, out, cmd, try api.verify(alloc, io, env, &progress, req));
+            const req = proto.parseRequest(proto.VerifyRequest, alloc, cmd, input) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            const response = api.verify(alloc, io, env, &progress, req) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
         },
         .@"apply-configs" => {
-            const req = try proto.parseRequest(proto.ConfigApplyRequest, alloc, cmd, input);
-            try proto.writeFinal(alloc, out, cmd, try api.applyConfigs(alloc, io, env, &progress, req));
+            const req = proto.parseRequest(proto.ConfigApplyRequest, alloc, cmd, input) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            const response = api.applyConfigs(alloc, io, env, &progress, req) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
         },
         .uninstall => {
-            const req = try proto.parseRequest(proto.UninstallRequest, alloc, cmd, input);
-            try proto.writeFinal(alloc, out, cmd, try api.uninstall(alloc, io, env, &progress, req));
+            const req = proto.parseRequest(proto.UninstallRequest, alloc, cmd, input) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            const response = api.uninstall(alloc, io, env, &progress, req) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
         },
         .@"extract-dotfiles" => {
-            const req = try proto.parseRequest(proto.ExtractDotfilesRequest, alloc, cmd, input);
-            try proto.writeFinal(alloc, out, cmd, try api.extractDotfiles(alloc, io, &progress, req));
+            const req = proto.parseRequest(proto.ExtractDotfilesRequest, alloc, cmd, input) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            const response = api.extractDotfiles(alloc, io, &progress, req) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
+            proto.writeFinal(alloc, out, cmd, response) catch |err| {
+                std.log.err("dev-env-install: {t}", .{err});
+                return 1;
+            };
         },
     }
+
+    return 0;
 }
 
 fn loadEnv(alloc: std.mem.Allocator, environ_map: *std.process.Environ.Map) !api.Env {
