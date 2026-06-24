@@ -3,7 +3,6 @@
 //! reserved for line-delimited JSON protocol messages.
 
 const std = @import("std");
-const cli = @import("cli");
 const shared = @import("shared");
 const proto = shared.protocol;
 const api = @import("api.zig");
@@ -21,7 +20,7 @@ pub fn main(init: std.process.Init) u8 {
         return 1;
     }
 
-    const cmd = cli.command(proto.Command, argv[1]) catch {
+    const cmd = parseCommand(argv[1]) catch {
         std.log.err("dev-env-install: unknown command: {s}", .{argv[1]});
         return 1;
     };
@@ -142,6 +141,10 @@ pub fn main(init: std.process.Init) u8 {
     return 0;
 }
 
+fn parseCommand(word: []const u8) error{UnknownCommand}!proto.Command {
+    return std.meta.stringToEnum(proto.Command, word) orelse error.UnknownCommand;
+}
+
 fn loadEnv(alloc: std.mem.Allocator, environ_map: *std.process.Environ.Map) !api.Env {
     const home = environ_map.get("HOME") orelse return error.HomeNotSet;
     const cache_root = environ_map.get("XDG_CACHE_HOME") orelse
@@ -153,10 +156,18 @@ fn loadEnv(alloc: std.mem.Allocator, environ_map: *std.process.Environ.Map) !api
     };
 }
 
+test parseCommand {
+    try std.testing.expectEqual(proto.Command.metadata, try parseCommand("metadata"));
+    try std.testing.expectEqual(proto.Command.@"apply-configs", try parseCommand("apply-configs"));
+    try std.testing.expectEqual(proto.Command.@"extract-dotfiles", try parseCommand("extract-dotfiles"));
+    try std.testing.expectError(error.UnknownCommand, parseCommand("missing"));
+}
+
 test {
     _ = @import("api.zig");
     _ = @import("apply.zig");
     _ = @import("dotfiles.zig");
+    _ = @import("git.zig");
     _ = @import("layout.zig");
     _ = @import("planner.zig");
     _ = @import("release.zig");

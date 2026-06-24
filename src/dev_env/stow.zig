@@ -29,6 +29,7 @@ pub fn args(
         "stow",
         try std.fmt.allocPrint(alloc, "--dir={s}", .{stow_dir}),
         try std.fmt.allocPrint(alloc, "--target={s}", .{target}),
+        "--no-folding",
         mode.flag(),
     });
     try argv.appendSlice(alloc, packages);
@@ -76,6 +77,7 @@ test args {
         "stow",
         "--dir=/home/u/.local/share/dev-env/stow-source",
         "--target=/home/u",
+        "--no-folding",
         "--restow",
         "neovim",
         "tmux",
@@ -86,5 +88,5 @@ test args {
     }
 
     const delete = try args(alloc, "/d", "/t", .delete, &.{"tmux"});
-    try std.testing.expectEqualStrings("--delete", delete[3]);
+    try std.testing.expectEqualStrings("--delete", delete[4]);
 }

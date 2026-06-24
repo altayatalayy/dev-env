@@ -1,6 +1,6 @@
-//! The release data compiled into this installer: which platforms it
-//! supports, which tools it ships at which versions, and the dependency
-//! graph. This file is the only place release content changes.
+//! The release data compiled into this installer: tools, their supported
+//! platforms and versions, and the dependency graph. This file is the only
+//! place release content changes.
 //!
 //! Per platform family the rule is:
 //! - apt/dnf (Linux): archives, source builds, and upstream official
@@ -9,6 +9,7 @@
 //!   itself, so no method declares brew build dependencies.
 
 const build_options = @import("build_options");
+const std = @import("std");
 const shared = @import("shared");
 const platform = shared.platform;
 const tools = @import("tools.zig");
@@ -16,7 +17,7 @@ const resolver = @import("resolver.zig");
 
 pub const name: []const u8 = build_options.release;
 
-pub const supported_platforms = [_]platform.Support{
+const common_platforms = [_]platform.Support{
     .{ .ubuntu = .{
         .versions = &.{ "24.04", "26.04" },
         .archs = &.{ .x86_64, .aarch64 },
@@ -39,32 +40,11 @@ const rust_version = "stable";
 const docker_version = "official";
 const alacritty_version = "0.15.1";
 
-const linux = [_]platform.PackageManager{ .apt, .dnf };
-
-const tmux_install_tpm =
-    "if [ ! -d \"{home}/.local/share/tmux/plugins/tpm\" ]; then " ++
-    "mkdir -p \"{home}/.local/share/tmux/plugins\" && " ++
-    "git clone --depth 1 https://github.com/tmux-plugins/tpm \"{home}/.local/share/tmux/plugins/tpm\"; " ++
-    "fi";
+const linux = [_]platform.PackageManager.Kind{ .apt, .dnf };
 
 const parallel_make = "make -j\"$(nproc)\"";
 
 const alacritty_prefix = "{opt}/alacritty/" ++ alacritty_version;
-
-const docker_apt_install_key =
-    "curl --fail --silent --show-error --location https://download.docker.com/linux/ubuntu/gpg " ++
-    "| sudo tee /etc/apt/keyrings/docker.asc >/dev/null";
-
-const docker_apt_enable_source =
-    ". /etc/os-release && ARCH=$(dpkg --print-architecture) && " ++
-    "echo \"deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] " ++
-    "https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable\" " ++
-    "| sudo tee /etc/apt/sources.list.d/docker.list >/dev/null";
-
-const docker_apt_install_packages =
-    "sudo apt-get update --quiet && " ++
-    "sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes " ++
-    "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin";
 
 const add_user_to_docker_group =
     "sudo usermod --append --groups docker \"$(id -un)\"";
@@ -73,6 +53,7 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .git,
         .description = "Git built from source",
+        .platforms = &common_platforms,
         .methods = &.{
             .{
                 .on = &linux,
@@ -82,8 +63,10 @@ pub const tool_defs = [_]tools.ToolDef{
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
-                        .apt = &.{ "autoconf", "build-essential", "curl", "dh-autoreconf", "gettext", "libcurl4-gnutls-dev", "libexpat1-dev", "libssl-dev", "tcl", "unzip", "zlib1g-dev" },
-                        .dnf = &.{ "autoconf", "curl", "curl-devel", "expat-devel", "gcc", "gettext", "make", "openssl-devel", "perl-ExtUtils-MakeMaker", "zlib-devel" },
+                        .packages = .{
+                            .apt = &.{ "autoconf", "build-essential", "curl", "dh-autoreconf", "gettext", "libcurl4-gnutls-dev", "libexpat1-dev", "libssl-dev", "tcl", "unzip", "zlib1g-dev" },
+                            .dnf = &.{ "autoconf", "curl", "curl-devel", "expat-devel", "gcc", "gettext", "make", "openssl-devel", "perl-ExtUtils-MakeMaker", "zlib-devel" },
+                        },
                     },
                     .build_steps = &.{
                         .{ .name = "generate configure", .argv = &.{ "make", "configure" } },
@@ -105,6 +88,7 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .zig,
         .description = "Zig toolchain",
+        .platforms = &common_platforms,
         .methods = &.{
             .{
                 .on = &linux,
@@ -128,15 +112,14 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .go,
         .description = "Go toolchain",
+        .platforms = &common_platforms,
+        .exports = &.{
+            .{ .name = "GOPATH", .value = "{home}/.local/share/go" },
+            .{ .name = "PATH", .value = "{home}/.local/share/go/bin", .mode = .prepend_path },
+        },
         .methods = &.{
             .{
                 .on = &linux,
-                .exports = &.{
-                    .{ .name = "GOROOT", .value = "{opt}/go/" ++ go_version },
-                    .{ .name = "GOPATH", .value = "{home}/.local/share/go" },
-                    .{ .name = "PATH", .value = "{opt}/go/" ++ go_version ++ "/bin", .mode = .prepend_path },
-                    .{ .name = "PATH", .value = "{home}/.local/share/go/bin", .mode = .prepend_path },
-                },
                 .method = .{ .archive = .{
                     .version = go_version,
                     .sources = &.{
@@ -158,19 +141,22 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .rust,
         .description = "Rust toolchain",
+        .platforms = &common_platforms,
+        .exports = &.{
+            .{ .name = "RUSTUP_HOME", .value = "{home}/.local/share/rustup" },
+            .{ .name = "CARGO_HOME", .value = "{home}/.local/share/cargo" },
+            .{ .name = "PATH", .value = "{home}/.local/share/cargo/bin", .mode = .prepend_path },
+        },
         .methods = &.{
             .{
                 .on = &linux,
-                .exports = &.{
-                    .{ .name = "RUSTUP_HOME", .value = "{home}/.local/share/rustup" },
-                    .{ .name = "CARGO_HOME", .value = "{home}/.local/share/cargo" },
-                    .{ .name = "PATH", .value = "{home}/.local/share/cargo/bin", .mode = .prepend_path },
-                },
                 .method = .{ .official = .{
                     .version = rust_version,
                     .install_dependencies = .{
-                        .apt = &.{ "build-essential", "ca-certificates", "curl", "libssl-dev", "pkg-config" },
-                        .dnf = &.{ "ca-certificates", "curl", "gcc", "openssl-devel", "pkgconf-pkg-config" },
+                        .packages = .{
+                            .apt = &.{ "build-essential", "ca-certificates", "curl", "libssl-dev", "pkg-config" },
+                            .dnf = &.{ "ca-certificates", "curl", "gcc", "openssl-devel", "pkgconf-pkg-config" },
+                        },
                     },
                     .install_steps = &.{
                         .{ .name = "create rust directories", .argv = &.{ "mkdir", "-p", "{home}/.local/share/rustup", "{home}/.local/share/cargo", "{cache_dir}" } },
@@ -194,16 +180,21 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .neovim,
         .description = "Neovim text editor",
+        .platforms = &common_platforms,
         .configs = &.{
             .{
                 .id = .@"neovim-config",
                 .for_tool = .neovim,
                 .stow_package = "nvim",
-                .requires_tools = &.{.go},
                 .install_dependencies = .{
-                    .apt = &.{"git"},
-                    .dnf = &.{"git"},
-                    .brew = &.{"git"},
+                    .packages = .{
+                        .apt = &.{"git"},
+                        .dnf = &.{"git"},
+                        .brew = &.{"git"},
+                    },
+                },
+                .runtime_dependencies = .{
+                    .tools = &.{.go},
                 },
                 .install_steps = &.{
                     .{ .name = "update neovim packs", .argv = &.{
@@ -231,12 +222,16 @@ pub const tool_defs = [_]tools.ToolDef{
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
-                        .apt = &.{ "build-essential", "cmake", "curl", "gettext", "git", "ninja-build", "pkg-config", "unzip" },
-                        .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "git", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
+                        .packages = .{
+                            .apt = &.{ "build-essential", "cmake", "curl", "gettext", "git", "ninja-build", "pkg-config", "unzip" },
+                            .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "git", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
+                        },
                     },
                     .runtime_dependencies = .{
-                        .apt = &.{"gettext"},
-                        .dnf = &.{"gettext"},
+                        .packages = .{
+                            .apt = &.{"gettext"},
+                            .dnf = &.{"gettext"},
+                        },
                     },
                     .build_steps = &.{
                         .{ .name = "build", .argv = &.{ "sh", "-c", parallel_make ++ " CMAKE_BUILD_TYPE=Release CMAKE_INSTALL_PREFIX=\"{prefix}\"" } },
@@ -256,22 +251,19 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .tmux,
         .description = "Terminal multiplexer",
+        .platforms = &common_platforms,
         .configs = &.{
             .{
                 .id = .@"tmux-config",
                 .for_tool = .tmux,
                 .stow_package = "tmux",
-                .install_dependencies = .{
-                    .apt = &.{"git"},
-                    .dnf = &.{"git"},
-                    .brew = &.{"git"},
+                .git_checkouts = &.{
+                    .{
+                        .url = "https://github.com/tmux-plugins/tpm",
+                        .destination = "{home}/.local/share/tmux/plugins/tpm",
+                    },
                 },
                 .install_steps = &.{
-                    .{ .name = "install tmux plugin manager", .argv = &.{
-                        "sh",
-                        "-c",
-                        tmux_install_tpm,
-                    } },
                     .{ .name = "install tmux plugins", .argv = &.{
                         "env",
                         "TMUX_PLUGIN_MANAGER_PATH={home}/.local/share/tmux/plugins",
@@ -289,12 +281,16 @@ pub const tool_defs = [_]tools.ToolDef{
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
-                        .apt = &.{ "automake", "bison", "build-essential", "libevent-dev", "libncurses-dev", "pkg-config" },
-                        .dnf = &.{ "automake", "bison", "gcc", "libevent-devel", "make", "ncurses-devel", "pkgconf-pkg-config" },
+                        .packages = .{
+                            .apt = &.{ "automake", "bison", "build-essential", "libevent-dev", "libncurses-dev", "pkg-config" },
+                            .dnf = &.{ "automake", "bison", "gcc", "libevent-devel", "make", "ncurses-devel", "pkgconf-pkg-config" },
+                        },
                     },
                     .runtime_dependencies = .{
-                        .apt = &.{ "libevent-2.1-7t64", "libncurses6" },
-                        .dnf = &.{ "libevent", "ncurses-libs" },
+                        .packages = .{
+                            .apt = &.{ "libevent-2.1-7t64", "libncurses6" },
+                            .dnf = &.{ "libevent", "ncurses-libs" },
+                        },
                     },
                     .build_steps = &.{
                         .{ .name = "configure", .argv = &.{ "./configure", "--prefix={prefix}" } },
@@ -315,36 +311,42 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .docker,
         .description = "Docker Engine",
+        .platforms = &common_platforms,
         .methods = &.{
             .{
                 .on = &.{.apt},
                 .method = .{ .official = .{
                     .version = docker_version,
                     .install_dependencies = .{
-                        .apt = &.{ "ca-certificates", "curl" },
+                        .packages = .{
+                            .apt = &.{ "ca-certificates", "curl" },
+                        },
+                    },
+                    .repositories = &.{
+                        .{ .apt = .{
+                            .key_url = "https://download.docker.com/linux/ubuntu/gpg",
+                            .key_path = "/etc/apt/keyrings/docker.asc",
+                            .source_path = "/etc/apt/sources.list.d/docker.list",
+                            .source_line = "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable",
+                        } },
+                    },
+                    .packages = &.{
+                        "docker-ce",
+                        "docker-ce-cli",
+                        "containerd.io",
+                        "docker-buildx-plugin",
+                        "docker-compose-plugin",
+                    },
+                    .conflicting_packages = &.{
+                        "docker.io",
+                        "docker-doc",
+                        "docker-compose",
+                        "docker-compose-v2",
+                        "podman-docker",
+                        "containerd",
+                        "runc",
                     },
                     .install_steps = &.{
-                        .{ .name = "remove conflicting docker packages", .argv = &.{
-                            "sh",
-                            "-c",
-                            "sudo env DEBIAN_FRONTEND=noninteractive apt-get remove --yes " ++
-                                "docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc || true",
-                        } },
-                        .{ .name = "create apt keyring directory", .argv = &.{
-                            "sudo", "install", "-m", "0755", "-d", "/etc/apt/keyrings",
-                        } },
-                        .{ .name = "install docker apt key", .argv = &.{
-                            "sh", "-c", docker_apt_install_key,
-                        } },
-                        .{ .name = "allow reading docker apt key", .argv = &.{
-                            "sudo", "chmod", "a+r", "/etc/apt/keyrings/docker.asc",
-                        } },
-                        .{ .name = "enable docker apt source", .argv = &.{
-                            "sh", "-c", docker_apt_enable_source,
-                        } },
-                        .{ .name = "install docker apt packages", .argv = &.{
-                            "sh", "-c", docker_apt_install_packages,
-                        } },
                         .{ .name = "add user to docker group", .argv = &.{
                             "sh", "-c", add_user_to_docker_group,
                         } },
@@ -357,18 +359,23 @@ pub const tool_defs = [_]tools.ToolDef{
                 .method = .{ .official = .{
                     .version = docker_version,
                     .install_dependencies = .{
-                        .dnf = &.{"dnf-plugins-core"},
+                        .packages = .{
+                            .dnf = &.{"dnf-plugins-core"},
+                        },
+                    },
+                    .repositories = &.{
+                        .{ .dnf = .{
+                            .url = "https://download.docker.com/linux/fedora/docker-ce.repo",
+                        } },
+                    },
+                    .packages = &.{
+                        "docker-ce",
+                        "docker-ce-cli",
+                        "containerd.io",
+                        "docker-buildx-plugin",
+                        "docker-compose-plugin",
                     },
                     .install_steps = &.{
-                        .{ .name = "add docker dnf repository", .argv = &.{
-                            "sudo",        "dnf",                                                                     "config-manager", "addrepo",
-                            "--overwrite", "--from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo",
-                        } },
-                        .{ .name = "install docker dnf packages", .argv = &.{
-                            "sudo",                  "dnf",           "install",       "--assumeyes",
-                            "docker-ce",             "docker-ce-cli", "containerd.io", "docker-buildx-plugin",
-                            "docker-compose-plugin",
-                        } },
                         .{ .name = "add user to docker group", .argv = &.{
                             "sh", "-c", add_user_to_docker_group,
                         } },
@@ -385,14 +392,17 @@ pub const tool_defs = [_]tools.ToolDef{
     .{
         .id = .alacritty,
         .description = "GPU-accelerated terminal emulator",
+        .platforms = &common_platforms,
         .configs = &.{
             .{
                 .id = .@"alacritty-config",
                 .for_tool = .alacritty,
                 .stow_package = "alacritty",
                 .install_dependencies = .{
-                    .apt = &.{ "desktop-file-utils", "ncurses-bin" },
-                    .dnf = &.{ "desktop-file-utils", "ncurses" },
+                    .packages = .{
+                        .apt = &.{ "desktop-file-utils", "ncurses-bin" },
+                        .dnf = &.{ "desktop-file-utils", "ncurses" },
+                    },
                 },
                 .install_steps = &.{
                     .{ .name = "validate desktop entry", .argv = &.{
@@ -415,19 +425,23 @@ pub const tool_defs = [_]tools.ToolDef{
         .methods = &.{
             .{
                 .on = &linux,
-                .requires_tools = &.{.rust},
                 .method = .{ .source = .{
                     .version = alacritty_version,
                     .url = "https://github.com/alacritty/alacritty/archive/refs/tags/v" ++ alacritty_version ++ ".tar.gz",
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
-                        .apt = &.{ "cmake", "g++", "gzip", "libfontconfig1-dev", "libfreetype6-dev", "libxcb-xfixes0-dev", "libxkbcommon-dev", "pkg-config", "python3", "scdoc" },
-                        .dnf = &.{ "cmake", "fontconfig-devel", "freetype-devel", "gcc-c++", "gzip", "libxcb-devel", "libxkbcommon-devel", "pkgconf-pkg-config", "python3", "scdoc" },
+                        .tools = &.{.rust},
+                        .packages = .{
+                            .apt = &.{ "cmake", "g++", "gzip", "libfontconfig1-dev", "libfreetype6-dev", "libxcb-xfixes0-dev", "libxkbcommon-dev", "pkg-config", "python3", "scdoc" },
+                            .dnf = &.{ "cmake", "fontconfig-devel", "freetype-devel", "gcc-c++", "gzip", "libxcb-devel", "libxkbcommon-devel", "pkgconf-pkg-config", "python3", "scdoc" },
+                        },
                     },
                     .runtime_dependencies = .{
-                        .apt = &.{ "libfontconfig1", "libfreetype6", "libxcb-xfixes0", "libxkbcommon0" },
-                        .dnf = &.{ "fontconfig", "freetype", "libxcb", "libxkbcommon" },
+                        .packages = .{
+                            .apt = &.{ "libfontconfig1", "libfreetype6", "libxcb-xfixes0", "libxkbcommon0" },
+                            .dnf = &.{ "fontconfig", "freetype", "libxcb", "libxkbcommon" },
+                        },
                     },
                     .build_steps = &.{
                         .{ .name = "cargo build", .argv = &.{ "sh", "-c", "cargo build --locked --release --jobs \"$(nproc)\"" } },
@@ -452,3 +466,27 @@ pub const tool_defs = [_]tools.ToolDef{
 pub const defs: resolver.Defs = .{
     .tools = &tool_defs,
 };
+
+pub fn supportsPlatform(p: platform.Platform) bool {
+    for (tool_defs) |tool| {
+        if (tool.supports(p)) return true;
+    }
+    return false;
+}
+
+pub fn supportedPlatforms(alloc: std.mem.Allocator) ![]const platform.Support {
+    var supports: std.ArrayList(platform.Support) = .empty;
+    for (tool_defs) |tool| {
+        for (tool.platforms) |candidate| {
+            var found = false;
+            for (supports.items) |existing| {
+                if (candidate.eql(existing)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) try supports.append(alloc, candidate);
+        }
+    }
+    return supports.items;
+}

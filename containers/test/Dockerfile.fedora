@@ -52,4 +52,4 @@ RUN if getent group "${TEST_GID}" >/dev/null; then \
 USER ${TEST_UID}:${TEST_GID}
 WORKDIR /tmp
 
-CMD ["bash", "/opt/dev-env-test/integration/run.sh"]
+CMD ["bash", "/opt/dev-env-test/e2e/fake/run.sh"]

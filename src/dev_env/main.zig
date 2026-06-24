@@ -11,6 +11,7 @@ const apply_mod = @import("apply.zig");
 const build_mod = @import("build.zig");
 const uninstall_mod = @import("uninstall.zig");
 const clean_mod = @import("clean.zig");
+const exports_mod = @import("exports.zig");
 const receipt_mod = @import("receipt.zig");
 const client = @import("installer_client.zig");
 
@@ -64,6 +65,7 @@ fn run(init: std.process.Init) !void {
         ),
         .build => |options| try build_mod.run(alloc, io, paths, options),
         .doctor => try runDoctor(alloc, io, paths),
+        .exports => try exports_mod.run(alloc, io, paths, init.environ_map),
         .uninstall => |options| try uninstall_mod.run(alloc, io, paths, options.policy),
         .clean => try clean_mod.run(alloc, io, paths),
     }
@@ -182,6 +184,7 @@ test {
     _ = @import("build.zig");
     _ = @import("configs.zig");
     _ = @import("stow.zig");
+    _ = @import("exports.zig");
     _ = @import("receipt.zig");
     _ = @import("system/manager.zig");
 }

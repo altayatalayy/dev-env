@@ -7,6 +7,6 @@ if [ $? -ne 0 ]; then
 fi
 
 if ! bash "${SCRIPT_DIR}/install-tools.sh" tmux neovim alacritty; then
-    echo "source build integration tests failed" >&2
+    echo "source build release e2e tests failed" >&2
     exit 1
 fi

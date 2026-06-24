@@ -20,13 +20,12 @@ pub fn uninstall(
     progress: ?*progress_mod.Progress,
     req: proto.UninstallRequest,
 ) !proto.UninstallResponse {
-    const pm = req.platform.packageManager();
     var step_env = try steps_mod.stepEnviron(
         alloc,
         env.environ_map,
         env.layout,
         release.defs,
-        pm,
+        req.platform,
         req.tools,
     );
     defer step_env.deinit();
@@ -37,7 +36,7 @@ pub fn uninstall(
     for (req.tools) |name| {
         if (progress) |p| try p.emit(.{ .event = "step_started", .tool = name, .detail = "uninstall" });
         const id = try resolver.toolByName(release.defs, name);
-        const method = release.defs.tool(id).?.method(pm) orelse continue;
+        const method = release.defs.tool(id).?.method(req.platform) orelse continue;
         switch (method.method) {
             .system => try kept_system.append(alloc, name),
             .archive => |a| try uninstallOwnedPrefix(alloc, io, env, name, a.bin_links, &removed),

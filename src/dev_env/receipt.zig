@@ -90,7 +90,14 @@ test "receipt round trip" {
             .cache_dir = "/cache",
         },
         .tools = &.{
-            .{ .tool = "neovim", .kind = .archive, .version = "0.11.2", .opt_dir = "/opt/neovim/0.11.2", .bin_links = &.{"/bin/nvim"} },
+            .{
+                .tool = "neovim",
+                .kind = .archive,
+                .version = "0.11.2",
+                .opt_dir = "/opt/neovim/0.11.2",
+                .env_exports = &.{.{ .name = "NVIM_APPNAME", .value = "nvim" }},
+                .bin_links = &.{"/bin/nvim"},
+            },
             .{ .tool = "tmux", .kind = .system, .version = "system" },
         },
         .configs = &.{"neovim-config"},
@@ -110,6 +117,7 @@ test "receipt round trip" {
     try std.testing.expectEqualStrings("neovim", loaded.tools[0].tool);
     try std.testing.expectEqual(proto.ToolKind.archive, loaded.tools[0].kind);
     try std.testing.expectEqualStrings("/opt/neovim/0.11.2", loaded.tools[0].opt_dir.?);
+    try std.testing.expectEqualStrings("NVIM_APPNAME", loaded.tools[0].env_exports[0].name);
     try std.testing.expectEqualStrings("tmux-config", loaded.skipped_configs[0]);
 
     const names = try loaded.toolNames(alloc);

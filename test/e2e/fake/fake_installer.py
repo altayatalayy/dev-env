@@ -21,6 +21,19 @@ BIN_NAMES = {
     "alacritty": "alacritty",
     "docker": "docker",
 }
+EXPORTS = {
+    "go": [
+        {"name": "GOROOT", "value": "{opt}/go/{release}"},
+        {"name": "GOPATH", "value": "{home}/.local/share/go"},
+        {"name": "PATH", "value": "{opt}/go/{release}/bin", "mode": "prepend_path"},
+        {"name": "PATH", "value": "{home}/.local/share/go/bin", "mode": "prepend_path"},
+    ],
+    "rust": [
+        {"name": "RUSTUP_HOME", "value": "{home}/.local/share/rustup"},
+        {"name": "CARGO_HOME", "value": "{home}/.local/share/cargo"},
+        {"name": "PATH", "value": "{home}/.local/share/cargo/bin", "mode": "prepend_path"},
+    ],
+}
 
 
 def release_id() -> str:
@@ -28,7 +41,7 @@ def release_id() -> str:
     if override:
         return override
     parent = Path(sys.argv[0]).resolve().parent.name
-    if parent and parent != "integration":
+    if parent and parent != "fake":
         return parent
     return "0.1.0"
 
@@ -101,7 +114,17 @@ def resolve() -> None:
 
     tool_actions = []
     for tool in sorted(resolved):
-        tool_actions.append({"tool": tool, "kind": "archive", "version": release_id()})
+        exports = []
+        for item in EXPORTS.get(tool, []):
+            next_item = dict(item)
+            next_item["value"] = next_item["value"].replace("{release}", release_id())
+            exports.append(next_item)
+        tool_actions.append({
+            "tool": tool,
+            "kind": "archive",
+            "version": release_id(),
+            "env_exports": exports,
+        })
 
     emit("resolve", {
         "selected_tools": selected,
@@ -141,20 +164,14 @@ def make_tool(req: dict, tool: str) -> dict:
 
 def apply() -> None:
     req = read_request()
-    read_request.current = req
     tools = []
     for tool in req.get("install", []):
         progress("apply", {"event": "install_started", "tool": tool})
         tools.append(make_tool(req, tool))
         progress("apply", {"event": "install_finished", "tool": tool})
 
-    layout = req.get("layout", {})
-    bin_root = Path(layout.get("bin", str(Path(os.environ["HOME"]) / ".local" / "bin")))
     for tool in req.get("deactivate", []):
-        bin_name = BIN_NAMES.get(tool, tool)
-        link = bin_root / bin_name
-        if link.is_symlink():
-            link.unlink()
+        remove_tool(req, tool)
 
     emit("apply", {"tools": tools})
 
@@ -199,16 +216,22 @@ def verify() -> None:
 
 def uninstall() -> None:
     req = read_request()
-    layout = req.get("layout", {})
-    bin_root = Path(layout.get("bin", str(Path(os.environ["HOME"]) / ".local" / "bin")))
     removed = []
     for tool in req.get("tools", []):
-        bin_name = BIN_NAMES.get(tool, tool)
-        link = bin_root / bin_name
-        if link.is_symlink():
-            link.unlink()
+        remove_tool(req, tool)
         removed.append(tool)
     emit("uninstall", {"removed": removed, "kept_system": []})
+
+
+def remove_tool(req: dict, tool: str) -> None:
+    layout = req.get("layout", {})
+    bin_root = Path(layout.get("bin", str(Path(os.environ["HOME"]) / ".local" / "bin")))
+    opt_root = Path(layout.get("opt", str(Path(os.environ["HOME"]) / ".local" / "share" / "dev-env" / "tools")))
+    bin_name = BIN_NAMES.get(tool, tool)
+    link = bin_root / bin_name
+    if link.is_symlink():
+        link.unlink()
+    shutil.rmtree(opt_root / tool, ignore_errors=True)
 
 
 def main() -> int:

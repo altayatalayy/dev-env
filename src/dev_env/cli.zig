@@ -20,6 +20,7 @@ pub const Command = union(enum) {
     upgrade: Apply,
     build: Build,
     doctor,
+    exports,
     uninstall: Apply,
     clean,
 
@@ -31,6 +32,7 @@ pub const Command = union(enum) {
         .upgrade = "move to the newest compatible installer and apply",
         .build = "source-build tools into release archives",
         .doctor = "check host, state, and installed tools",
+        .exports = "print installed tool environment variables",
         .uninstall = "remove managed tools, configs, and state",
         .clean = "remove inactive tool versions and old state",
     };
@@ -82,7 +84,7 @@ pub const Command = union(enum) {
 
 pub const Error = error{ InvalidArguments, OutOfMemory };
 
-const Verb = enum { plan, apply, upgrade, build, doctor, uninstall, clean };
+const Verb = enum { plan, apply, upgrade, build, doctor, exports, uninstall, clean };
 
 pub fn parse(alloc: std.mem.Allocator, args: []const [:0]const u8) Error!Command {
     if (args.len == 0) return fail("missing command", .{});
@@ -96,6 +98,10 @@ pub fn parse(alloc: std.mem.Allocator, args: []const [:0]const u8) Error!Command
         .doctor => blk: {
             try expectNoArgs("doctor", rest);
             break :blk .doctor;
+        },
+        .exports => blk: {
+            try expectNoArgs("exports", rest);
+            break :blk .exports;
         },
         .uninstall => .{ .uninstall = .{ .policy = try parsePolicy(rest) } },
         .clean => blk: {
@@ -290,6 +296,7 @@ test "parse commands" {
     const alloc = arena_state.allocator();
 
     try testing.expectEqual(Command.doctor, try parse(alloc, &.{"doctor"}));
+    try testing.expectEqual(Command.exports, try parse(alloc, &.{"exports"}));
     try testing.expectEqual(Command.clean, try parse(alloc, &.{"clean"}));
 
     const apply = try parse(alloc, &.{"apply"});
@@ -301,6 +308,7 @@ test "parse commands" {
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{}));
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{"unknown"}));
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "doctor", "extra" }));
+    try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "exports", "--shell" }));
     try testing.expectError(error.InvalidArguments, parse(alloc, &.{ "apply", "--config-conflict=bad" }));
 }
 

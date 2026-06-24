@@ -62,6 +62,10 @@ pub fn classifyTarget(
     target: []const u8,
     managed_roots: []const []const u8,
 ) !TargetState {
+    if (try classifyAncestorSymlink(alloc, io, target, managed_roots)) |state| {
+        return state;
+    }
+
     const cwd = std.Io.Dir.cwd();
     const stat = cwd.statFile(io, target, .{ .follow_symlinks = false }) catch |err| switch (err) {
         error.FileNotFound => return .missing,
@@ -77,6 +81,31 @@ pub fn classifyTarget(
         .directory => return .foreign_dir,
         else => return .foreign_file,
     }
+}
+
+fn classifyAncestorSymlink(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    target: []const u8,
+    managed_roots: []const []const u8,
+) !?TargetState {
+    const cwd = std.Io.Dir.cwd();
+    var index: usize = if (std.fs.path.isAbsolute(target)) 1 else 0;
+    while (std.mem.indexOfScalarPos(u8, target, index, '/')) |slash| {
+        index = slash + 1;
+        const ancestor = target[0..slash];
+        const stat = cwd.statFile(io, ancestor, .{ .follow_symlinks = false }) catch |err| switch (err) {
+            error.FileNotFound => return null,
+            else => return err,
+        };
+        if (stat.kind != .sym_link) continue;
+
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const len = try std.Io.Dir.readLinkAbsolute(io, ancestor, &buffer);
+        const resolved = try resolveLinkTarget(alloc, ancestor, buffer[0..len]);
+        return if (isManagedTarget(resolved, managed_roots)) .managed else .foreign_symlink;
+    }
+    return null;
 }
 
 /// Checks every file of a dotfiles package against its target in $HOME and
@@ -354,6 +383,35 @@ test isManagedTarget {
     try testing.expect(!isManagedTarget("/home/u/.config/own", &roots));
     // Prefix match must respect path component boundaries.
     try testing.expect(!isManagedTarget("/home/u/.local/share/dev-env/stow-sources-fake", &roots));
+}
+
+test "classifyTarget recognizes managed ancestor symlinks" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try tmp.dir.realPathFileAlloc(io, ".", alloc);
+    const home = try std.fmt.allocPrint(alloc, "{s}/home", .{root});
+    const stow_source = try std.fmt.allocPrint(alloc, "{s}/data/stow/tmux/.config/tmux", .{root});
+    try cwd.createDirPath(io, home);
+    try cwd.createDirPath(io, stow_source);
+
+    const managed_file = try std.fmt.allocPrint(alloc, "{s}/tmux.conf", .{stow_source});
+    {
+        const file = try std.Io.Dir.createFileAbsolute(io, managed_file, .{});
+        file.close(io);
+    }
+
+    const config_link = try std.fmt.allocPrint(alloc, "{s}/.config", .{home});
+    try std.Io.Dir.symLinkAbsolute(io, try std.fmt.allocPrint(alloc, "{s}/data/stow/tmux/.config", .{root}), config_link, .{});
+
+    const target = try std.fmt.allocPrint(alloc, "{s}/.config/tmux/tmux.conf", .{home});
+    const roots = [_][]const u8{try std.fmt.allocPrint(alloc, "{s}/data/stow", .{root})};
+    try testing.expectEqual(TargetState.managed, try classifyTarget(alloc, io, target, &roots));
 }
 
 test formatTimestamp {

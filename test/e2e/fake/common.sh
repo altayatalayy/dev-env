@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Common helpers for fast integration tests. These tests use a protocol-compatible
-# fake installer so they exercise the real dev-env lifecycle without downloading
-# or building external tools.
+# Common helpers for fast e2e tests. These tests use a protocol-compatible fake
+# installer so they exercise the real dev-env lifecycle without downloading or
+# building external tools.
 
 dev_env_script_dir() {
     cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 || return 1
@@ -12,7 +12,7 @@ dev_env_script_dir() {
 dev_env_repo_root() {
     local script_dir
     script_dir="$(dev_env_script_dir)" || return 1
-    cd "${script_dir}/../.." >/dev/null 2>&1 || return 1
+    cd "${script_dir}/../../.." >/dev/null 2>&1 || return 1
     pwd
 }
 

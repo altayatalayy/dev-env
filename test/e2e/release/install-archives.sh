@@ -6,7 +6,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if ! bash "${SCRIPT_DIR}/install-tools.sh" rust; then
-    echo "rust install integration tests failed" >&2
+if ! bash "${SCRIPT_DIR}/install-tools.sh" zig go; then
+    echo "archive install release e2e tests failed" >&2
     exit 1
 fi

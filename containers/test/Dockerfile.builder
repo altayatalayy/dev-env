@@ -28,3 +28,5 @@ RUN mkdir --parents /opt/zig && \
 
 WORKDIR /src
 COPY . .
+COPY --from=zig_cli . /zig-cli
+COPY --from=zig_graph . /zig-graph

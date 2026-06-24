@@ -10,29 +10,14 @@ const shared = @import("shared");
 const proto = shared.protocol;
 const platform = shared.platform;
 const runner = shared.runner;
+const templates = shared.templates;
 const tools = @import("tools.zig");
 const resolver = @import("resolver.zig");
 const layout_mod = @import("layout.zig");
 const progress_mod = @import("progress.zig");
 
-/// Values substituted into step argv entries and export values. Unknown
-/// `{key}` markers are left untouched (shell `${VAR}` survives rendering).
-pub const Vars = struct {
-    home: []const u8,
-    cache_dir: []const u8,
-    bin: []const u8,
-    opt: []const u8,
-    prefix: ?[]const u8 = null,
-
-    fn lookup(v: Vars, key: []const u8) ?[]const u8 {
-        if (std.mem.eql(u8, key, "home")) return v.home;
-        if (std.mem.eql(u8, key, "cache_dir")) return v.cache_dir;
-        if (std.mem.eql(u8, key, "bin")) return v.bin;
-        if (std.mem.eql(u8, key, "opt")) return v.opt;
-        if (std.mem.eql(u8, key, "prefix")) return v.prefix;
-        return null;
-    }
-};
+pub const Vars = templates.Vars;
+pub const render = templates.render;
 
 pub const Context = struct {
     /// Working directory for the steps; null inherits the installer's cwd.
@@ -51,41 +36,14 @@ pub const Subject = struct {
     }
 };
 
-pub fn render(alloc: std.mem.Allocator, arg: []const u8, vars: Vars) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(alloc);
-
-    var rest = arg;
-    while (std.mem.indexOfScalar(u8, rest, '{')) |open| {
-        try out.appendSlice(alloc, rest[0..open]);
-        const after_open = rest[open + 1 ..];
-        const close = std.mem.indexOfScalar(u8, after_open, '}') orelse {
-            try out.appendSlice(alloc, rest[open..]);
-            return out.items;
-        };
-        const key = after_open[0..close];
-        if (vars.lookup(key)) |value| {
-            try out.appendSlice(alloc, value);
-        } else {
-            try out.append(alloc, '{');
-            try out.appendSlice(alloc, key);
-            try out.append(alloc, '}');
-        }
-        rest = after_open[close + 1 ..];
-    }
-    if (out.items.len == 0) return arg;
-    try out.appendSlice(alloc, rest);
-    return out.items;
-}
-
 /// Child environment for steps: the base environment with the layout bin
-/// directory and every active tool's method exports applied to it.
+/// directory and every active tool's exports applied to it.
 pub fn stepEnviron(
     alloc: std.mem.Allocator,
     base: *const std.process.Environ.Map,
     layout: layout_mod.Layout,
     defs: resolver.Defs,
-    pm: platform.PackageManager,
+    host: platform.Platform,
     active_tools: []const []const u8,
 ) !std.process.Environ.Map {
     var env = try base.clone(alloc);
@@ -101,8 +59,9 @@ pub fn stepEnviron(
 
     for (active_tools) |name| {
         const id = try resolver.toolByName(defs, name);
-        const method = defs.tool(id).?.method(pm) orelse continue;
-        for (method.exports) |item| {
+        const def = defs.tool(id).?;
+        if (def.method(host) == null) continue;
+        for (def.exports) |item| {
             const value = try render(alloc, item.value, vars);
             switch (item.mode) {
                 .set => try env.put(item.name, value),
@@ -246,32 +205,6 @@ fn drain(multi: *std.Io.File.MultiReader, sink: *std.Io.Writer) !void {
 
 const testing = std.testing;
 
-test render {
-    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena_state.deinit();
-    const alloc = arena_state.allocator();
-
-    const vars: Vars = .{ .home = "/h", .cache_dir = "/c", .bin = "/b", .opt = "/o", .prefix = "/p" };
-    try testing.expectEqualStrings("plain", try render(alloc, "plain", vars));
-    try testing.expectEqualStrings("/h/.local/share/tmux", try render(alloc, "{home}/.local/share/tmux", vars));
-    try testing.expectEqualStrings("--prefix=/p", try render(alloc, "--prefix={prefix}", vars));
-    try testing.expectEqualStrings("/o/tmux", try render(alloc, "{opt}/tmux", vars));
-    try testing.expectEqualStrings("/c//h", try render(alloc, "{cache_dir}/{home}", vars));
-    // Unknown keys survive so shell ${VAR} expansions are untouched.
-    try testing.expectEqualStrings("echo ${ARCH}", try render(alloc, "echo ${ARCH}", vars));
-    try testing.expectEqualStrings("{unclosed", try render(alloc, "{unclosed", vars));
-}
-
-test "render fails on prefix outside build steps" {
-    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena_state.deinit();
-    const alloc = arena_state.allocator();
-
-    const vars: Vars = .{ .home = "/h", .cache_dir = "/c", .bin = "/b", .opt = "/o" };
-    // No prefix var: the marker is preserved rather than silently emptied.
-    try testing.expectEqualStrings("{prefix}/bin", try render(alloc, "{prefix}/bin", vars));
-}
-
 test findExecutable {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
@@ -339,11 +272,14 @@ test stepEnviron {
         .{
             .id = .rust,
             .description = "",
+            .platforms = &.{
+                .{ .ubuntu = .{ .versions = &.{"24.04"}, .archs = &.{.x86_64} } },
+            },
+            .exports = &.{
+                .{ .name = "CARGO_HOME", .value = "{home}/.local/share/cargo" },
+                .{ .name = "PATH", .value = "{home}/.local/share/cargo/bin", .mode = .prepend_path },
+            },
             .methods = &.{.{
-                .exports = &.{
-                    .{ .name = "CARGO_HOME", .value = "{home}/.local/share/cargo" },
-                    .{ .name = "PATH", .value = "{home}/.local/share/cargo/bin", .mode = .prepend_path },
-                },
                 .method = .{ .official = .{ .version = "stable", .install_steps = &.{}, .verify_bins = &.{} } },
             }},
         },
@@ -355,7 +291,14 @@ test stepEnviron {
         .cache_dir = "/c",
     });
 
-    var env = try stepEnviron(alloc, &base, layout, defs, .apt, &.{"rust"});
+    var env = try stepEnviron(
+        alloc,
+        &base,
+        layout,
+        defs,
+        .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } },
+        &.{"rust"},
+    );
     defer env.deinit();
 
     try testing.expectEqualStrings("/h/.local/share/cargo", env.get("CARGO_HOME").?);

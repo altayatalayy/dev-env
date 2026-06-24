@@ -20,15 +20,13 @@ pub fn verify(
     progress: ?*progress_mod.Progress,
     req: proto.VerifyRequest,
 ) !proto.VerifyResponse {
-    const pm = req.platform.packageManager();
-
     // Same PATH the install/build steps saw: layout bin plus tool exports.
     var step_env = try steps_mod.stepEnviron(
         alloc,
         env.environ_map,
         env.layout,
         release.defs,
-        pm,
+        req.platform,
         req.tools,
     );
     defer step_env.deinit();
@@ -39,7 +37,7 @@ pub fn verify(
     for (req.tools) |name| {
         if (progress) |p| try p.emit(.{ .event = "verify_started", .tool = name });
         const id = try resolver.toolByName(release.defs, name);
-        const method = release.defs.tool(id).?.method(pm) orelse {
+        const method = release.defs.tool(id).?.method(req.platform) orelse {
             try results.append(alloc, .{
                 .tool = name,
                 .ok = false,

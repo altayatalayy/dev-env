@@ -60,7 +60,7 @@ pub fn run(
         std.log.info("kept system package for {s} (remove via apt/brew if wanted)", .{name});
     }
 
-    // 4. Leftover opt prefixes from older releases/deactivated tools.
+    // 4. Leftover opt prefixes from older releases.
     for (receipt.owned_prefixes) |prefix| {
         cwd.deleteTree(io, prefix) catch {};
     }

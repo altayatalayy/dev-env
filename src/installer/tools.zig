@@ -5,9 +5,8 @@
 //!
 //! Install methods are selected per package-manager domain (apt/dnf/brew):
 //! the same tool can be a source build on apt/dnf and a plain brew formula
-//! on macOS. Toolchain dependencies and environment exports belong to the
-//! selected method, not the tool, so e.g. rust is only pulled in where
-//! alacritty is actually built from source.
+//! on macOS. Build and runtime dependencies belong to the selected method,
+//! while dependencies used only by a config belong to that config.
 
 const std = @import("std");
 const shared = @import("shared");
@@ -33,16 +32,33 @@ pub const ConfigId = enum {
 pub const ToolDef = struct {
     id: ToolId,
     description: []const u8,
+    /// OS versions and architectures on which this tool can be installed.
+    platforms: []const platform.Support,
     /// Config packages owned by this tool.
     configs: []const ConfigDef = &.{},
+    /// Environment values exported whenever this tool is active, regardless
+    /// of the installation method selected for the host.
+    exports: []const EnvExport = &.{},
     /// Candidate install methods; the first entry matching the host's
     /// package manager wins. No match means the tool is unavailable there.
     methods: []const PlatformMethod,
 
-    pub fn method(t: *const ToolDef, pm: platform.PackageManager) ?*const PlatformMethod {
+    pub fn supports(t: ToolDef, p: platform.Platform) bool {
+        return platform.isSupported(t.platforms, p);
+    }
+
+    pub fn method(t: *const ToolDef, p: platform.Platform) ?*const PlatformMethod {
+        if (!t.supports(p)) return null;
+        return t.methodForManager(p.packageManager().kind);
+    }
+
+    pub fn methodForManager(
+        t: *const ToolDef,
+        manager: platform.PackageManager.Kind,
+    ) ?*const PlatformMethod {
         for (t.methods) |*m| {
             if (m.on.len == 0) return m;
-            if (std.mem.indexOfScalar(platform.PackageManager, m.on, pm) != null) return m;
+            if (std.mem.indexOfScalar(platform.PackageManager.Kind, m.on, manager) != null) return m;
         }
         return null;
     }
@@ -50,12 +66,7 @@ pub const ToolDef = struct {
 
 pub const PlatformMethod = struct {
     /// Package-manager domains this method applies to; empty means any.
-    on: []const platform.PackageManager = &.{},
-    /// Tools that must be installed first (e.g. a source build's toolchain).
-    requires_tools: []const ToolId = &.{},
-    /// Environment values exported to every later install/build/config step
-    /// while this tool is active.
-    exports: []const EnvExport = &.{},
+    on: []const platform.PackageManager.Kind = &.{},
     method: Method,
 };
 
@@ -82,37 +93,25 @@ pub const Step = struct {
     argv: []const []const u8,
 };
 
-/// Packages installed by the system package manager before building or
-/// running an upstream installer. There is intentionally no brew list:
-/// on macOS tools are installed as brew formulas/casks, which resolve
-/// their own dependencies.
-pub const BuildDependencies = struct {
-    apt: []const []const u8 = &.{},
-    dnf: []const []const u8 = &.{},
-
-    pub fn forManager(d: BuildDependencies, pm: platform.PackageManager) []const []const u8 {
-        return switch (pm) {
-            .apt => d.apt,
-            .dnf => d.dnf,
-            .brew => &.{},
-        };
-    }
-};
-
-/// Packages needed when applying a config package (e.g. git for plugin
-/// clones); configs apply on every platform, so brew is included here.
-pub const InstallDependencies = struct {
+/// Packages supplied by the host package manager.
+pub const PackageDependencies = struct {
     apt: []const []const u8 = &.{},
     dnf: []const []const u8 = &.{},
     brew: []const []const u8 = &.{},
 
-    pub fn forManager(d: InstallDependencies, pm: platform.PackageManager) []const []const u8 {
-        return switch (pm) {
+    pub fn forManager(d: PackageDependencies, pm: platform.PackageManager) []const []const u8 {
+        return switch (pm.kind) {
             .apt => d.apt,
             .dnf => d.dnf,
             .brew => d.brew,
         };
     }
+};
+
+/// Tools and system packages needed for one lifecycle phase.
+pub const Dependencies = struct {
+    tools: []const ToolId = &.{},
+    packages: PackageDependencies = .{},
 };
 
 pub const Archive = struct {
@@ -158,8 +157,8 @@ pub const SourceBuild = struct {
     url: []const u8,
     format: Archive.Format,
     strip_components: u32,
-    build_dependencies: BuildDependencies = .{},
-    runtime_dependencies: BuildDependencies = .{},
+    build_dependencies: Dependencies = .{},
+    runtime_dependencies: Dependencies = .{},
     /// Run inside the extracted source tree. Executables resolve against the
     /// step PATH (layout bin dir plus active tool exports).
     build_steps: []const Step,
@@ -168,10 +167,20 @@ pub const SourceBuild = struct {
 
 pub const OfficialInstaller = struct {
     version: []const u8,
-    install_dependencies: BuildDependencies = .{},
-    install_steps: []const Step,
+    install_dependencies: Dependencies = .{},
+    conflicting_packages: []const []const u8 = &.{},
+    repositories: []const platform.Repository = &.{},
+    packages: []const []const u8 = &.{},
+    install_steps: []const Step = &.{},
     uninstall_steps: []const Step = &.{},
     verify_bins: []const []const u8,
+};
+
+pub const GitCheckout = struct {
+    url: []const u8,
+    destination: []const u8,
+    branch: ?[]const u8 = null,
+    depth: ?u32 = 1,
 };
 
 pub const ConfigDef = struct {
@@ -181,11 +190,15 @@ pub const ConfigDef = struct {
     for_tool: ToolId,
     /// Directory name inside the dotfiles archive (a GNU Stow package).
     stow_package: []const u8,
-    /// Extra tools this config depends on (e.g. LSP toolchains).
-    requires_tools: []const ToolId = &.{},
     /// Other config packages this config depends on.
-    requires_configs: []const ConfigId = &.{},
-    install_dependencies: InstallDependencies = .{},
+    config_dependencies: []const ConfigId = &.{},
+    /// Dependencies needed while applying the config.
+    install_dependencies: Dependencies = .{},
+    /// Dependencies used by the configured tool after installation.
+    runtime_dependencies: Dependencies = .{},
+    /// Git repositories checked out before install steps. Declaring any
+    /// checkout automatically adds git to the config's system dependencies.
+    git_checkouts: []const GitCheckout = &.{},
     /// Steps run after dev-env has stowed this config package.
     install_steps: []const Step = &.{},
 };
@@ -193,9 +206,14 @@ pub const ConfigDef = struct {
 // --- tests ---
 
 test "method selection by package manager" {
+    const supports = [_]platform.Support{
+        .{ .ubuntu = .{ .archs = &.{.x86_64} } },
+        .{ .macos = .{ .archs = &.{.x86_64} } },
+    };
     const def: ToolDef = .{
         .id = .docker,
         .description = "",
+        .platforms = &supports,
         .methods = &.{
             .{ .on = &.{.apt}, .method = .{ .official = .{
                 .version = "x",
@@ -210,23 +228,58 @@ test "method selection by package manager" {
         },
     };
 
-    try std.testing.expect(def.method(.apt).?.method == .official);
-    try std.testing.expect(def.method(.brew).?.method == .system);
-    try std.testing.expectEqual(@as(?*const PlatformMethod, null), def.method(.dnf));
+    const ubuntu: platform.Platform = .{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } };
+    const macos: platform.Platform = .{ .macos = .{ .version = "15", .arch = .x86_64 } };
+    const fedora: platform.Platform = .{ .fedora = .{ .version = "44", .arch = .x86_64 } };
+    try std.testing.expect(def.method(ubuntu).?.method == .official);
+    try std.testing.expect(def.method(macos).?.method == .system);
+    try std.testing.expectEqual(@as(?*const PlatformMethod, null), def.method(fedora));
 }
 
 test "empty selector matches any package manager" {
+    const supports = [_]platform.Support{
+        .{ .ubuntu = .{ .archs = &.{.x86_64} } },
+        .{ .fedora = .{ .archs = &.{.x86_64} } },
+        .{ .macos = .{ .archs = &.{.x86_64} } },
+    };
     const def: ToolDef = .{
         .id = .go,
         .description = "",
+        .platforms = &supports,
         .methods = &.{
             .{ .method = .{ .archive = .{ .version = "1", .sources = &.{}, .bin_links = &.{} } } },
         },
     };
 
-    try std.testing.expect(def.method(.apt) != null);
-    try std.testing.expect(def.method(.dnf) != null);
-    try std.testing.expect(def.method(.brew) != null);
+    try std.testing.expect(def.method(.{ .ubuntu = .{ .version = "24.04", .arch = .x86_64 } }) != null);
+    try std.testing.expect(def.method(.{ .fedora = .{ .version = "44", .arch = .x86_64 } }) != null);
+    try std.testing.expect(def.method(.{ .macos = .{ .version = "15", .arch = .x86_64 } }) != null);
+}
+
+test "tool platform support is checked before package manager selection" {
+    const def: ToolDef = .{
+        .id = .git,
+        .description = "",
+        .platforms = &.{
+            .{ .ubuntu = .{ .versions = &.{"24.04"}, .archs = &.{.x86_64} } },
+        },
+        .methods = &.{
+            .{ .on = &.{.apt}, .method = .{ .system = .{
+                .packages = &.{"git"},
+                .check_bin = "git",
+            } } },
+        },
+    };
+
+    try std.testing.expect(def.method(.{
+        .ubuntu = .{ .version = "24.04", .arch = .x86_64 },
+    }) != null);
+    try std.testing.expect(def.method(.{
+        .ubuntu = .{ .version = "22.04", .arch = .x86_64 },
+    }) == null);
+    try std.testing.expect(def.method(.{
+        .debian = .{ .version = "13", .arch = .x86_64 },
+    }) == null);
 }
 
 test "archive source selection by arch" {

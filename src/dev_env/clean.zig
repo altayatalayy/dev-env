@@ -1,5 +1,5 @@
-//! Removes inactive tool versions and old release state. Normal apply only
-//! activates/deactivates; this is the only place old versions are deleted.
+//! Removes inactive tool versions left by upgrades and old release state.
+//! Plan removals uninstall removed tools during apply.
 
 const std = @import("std");
 const shared = @import("shared");

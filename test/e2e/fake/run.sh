@@ -2,13 +2,14 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 if [ $? -ne 0 ]; then
-    echo "failed to locate integration script directory" >&2
+    echo "failed to locate fake e2e script directory" >&2
     exit 1
 fi
 
 TESTS="
 platform.sh
 smoke.sh
+exports.sh
 plan-change.sh
 apply-idempotent.sh
 upgrade-downgrade.sh
@@ -19,11 +20,11 @@ protocol-failure.sh
 "
 
 for test_script in ${TESTS}; do
-    echo "==> integration/${test_script}"
+    echo "==> e2e/fake/${test_script}"
     if ! bash "${SCRIPT_DIR}/${test_script}"; then
-        echo "integration test failed: ${test_script}" >&2
+        echo "fake e2e test failed: ${test_script}" >&2
         exit 1
     fi
 done
 
-echo "integration suite passed"
+echo "fake e2e suite passed"

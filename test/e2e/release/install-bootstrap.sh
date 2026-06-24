@@ -6,7 +6,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if ! . "${SCRIPT_DIR}/../integration/common.sh"; then
+if ! . "${SCRIPT_DIR}/../fake/common.sh"; then
     echo "failed to load test helpers" >&2
     exit 1
 fi
@@ -49,4 +49,4 @@ if ! "${HOME}/.local/bin/dev-env" doctor >/dev/null; then
     exit 1
 fi
 
-echo "bootstrap integration tests passed"
+echo "bootstrap release e2e tests passed"

@@ -12,7 +12,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-TEST_SCRIPT="${1:-/opt/dev-env-test/integration/run.sh}"
+TEST_SCRIPT="${1:-/opt/dev-env-test/e2e/fake/run.sh}"
 TEST_TARGETS="${TEST_TARGETS:-ubuntu-24.04-x86_64 ubuntu-26.04-x86_64 fedora-44-x86_64}"
 TEST_UID="$(id -u)"
 if [ $? -ne 0 ]; then
@@ -28,9 +28,21 @@ fi
 BUILD_IMAGE="dev-env-test-builder:zig-0.16"
 BUILD_BIN_DIR="${REPO_ROOT}/build/test-bin"
 RELEASE="${DEV_ENV_RELEASE:-0.1.0}"
+ZIG_CLI_DIR="${REPO_ROOT}/../zig-cli"
+ZIG_GRAPH_DIR="${REPO_ROOT}/../zig-graph"
 
 if ! mkdir --parents "${BUILD_BIN_DIR}"; then
     echo "failed to create test binary directory" >&2
+    exit 1
+fi
+
+if [ ! -d "${ZIG_CLI_DIR}" ]; then
+    echo "missing local Zig CLI library: ${ZIG_CLI_DIR}" >&2
+    exit 1
+fi
+
+if [ ! -d "${ZIG_GRAPH_DIR}" ]; then
+    echo "missing local Zig graph library: ${ZIG_GRAPH_DIR}" >&2
     exit 1
 fi
 
@@ -38,6 +50,8 @@ if ! docker build \
     --platform linux/amd64 \
     --file "${REPO_ROOT}/containers/test/Dockerfile.builder" \
     --tag "${BUILD_IMAGE}" \
+    --build-context "zig_cli=${ZIG_CLI_DIR}" \
+    --build-context "zig_graph=${ZIG_GRAPH_DIR}" \
     "${REPO_ROOT}"; then
     echo "test builder image build failed" >&2
     exit 1

@@ -31,7 +31,7 @@ def fail(msg: str) -> int:
 
 def main() -> int:
     if len(sys.argv) < 4:
-        return fail("usage: json_assert.py <exists|equals|contains|not-contains|contains-field|len> <file> <path> [value...]")
+        return fail("usage: json_assert.py <exists|equals|contains|not-contains|contains-field|not-contains-field|len> <file> <path> [value...]")
     command, file_name, path = sys.argv[1:4]
     actual = get(load(file_name), path)
 
@@ -48,6 +48,17 @@ def main() -> int:
             if isinstance(item, dict) and item.get(field) == expected:
                 return 0
         return fail(f"{path}: no object with {field}={expected!r} in {actual!r}")
+    if command == "not-contains-field":
+        if len(sys.argv) != 6:
+            return fail("not-contains-field requires <file> <list-path> <field> <value>")
+        field = sys.argv[4]
+        expected = parse_scalar(sys.argv[5])
+        if not isinstance(actual, list):
+            return fail(f"{path}: expected list, got {type(actual).__name__}")
+        for item in actual:
+            if isinstance(item, dict) and item.get(field) == expected:
+                return fail(f"{path}: object with {field}={expected!r} unexpectedly in {actual!r}")
+        return 0
     if command == "len":
         expected = int(sys.argv[4])
         return 0 if len(actual) == expected else fail(f"{path}: expected length {expected}, got {len(actual)}")

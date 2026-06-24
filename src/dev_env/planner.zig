@@ -205,7 +205,7 @@ fn errorUnknownTool(name: []const u8) error{UnknownTool} {
 
 pub const Diff = struct {
     install_tools: []const []const u8,
-    deactivate_tools: []const []const u8,
+    remove_tools: []const []const u8,
     add_configs: []const []const u8,
     remove_configs: []const []const u8,
     remove_stow_packages: []const []const u8,
@@ -217,7 +217,7 @@ pub const Diff = struct {
     };
 
     pub fn isEmpty(d: Diff) bool {
-        return d.install_tools.len == 0 and d.deactivate_tools.len == 0 and
+        return d.install_tools.len == 0 and d.remove_tools.len == 0 and
             d.add_configs.len == 0 and d.remove_configs.len == 0 and
             d.remove_stow_packages.len == 0 and d.release_change == null;
     }
@@ -235,7 +235,7 @@ pub fn computeDiff(
     if (receipt == null) {
         return .{
             .install_tools = lock.resolved_tools,
-            .deactivate_tools = &.{},
+            .remove_tools = &.{},
             .add_configs = lock.resolved_configs,
             .remove_configs = &.{},
             .remove_stow_packages = &.{},
@@ -251,7 +251,7 @@ pub fn computeDiff(
             lock.resolved_tools
         else
             try ids.missingFrom(alloc, lock.resolved_tools, actual_tools),
-        .deactivate_tools = try ids.missingFrom(alloc, actual_tools, lock.resolved_tools),
+        .remove_tools = try ids.missingFrom(alloc, actual_tools, lock.resolved_tools),
         .add_configs = try ids.missingFrom(alloc, lock.resolved_configs, actual.configs),
         .remove_configs = try ids.missingFrom(alloc, actual.configs, lock.resolved_configs),
         .remove_stow_packages = try ids.missingFrom(alloc, actual.stow_packages, resolve_response.stow_packages),
@@ -271,7 +271,7 @@ pub fn printDiff(diff: Diff) void {
         std.log.info("installer: {s} -> {s}", .{ change.from, change.to });
     }
     for (diff.install_tools) |name| std.log.info("+ tool   {s}", .{name});
-    for (diff.deactivate_tools) |name| std.log.info("- tool   {s}", .{name});
+    for (diff.remove_tools) |name| std.log.info("- tool   {s}", .{name});
     for (diff.add_configs) |name| std.log.info("+ config {s}", .{name});
     for (diff.remove_configs) |name| std.log.info("- config {s}", .{name});
 }
@@ -359,12 +359,12 @@ test "diff with no receipt installs everything" {
     const diff = try computeDiff(alloc, testLock("0.1.0"), test_resolve_response, null);
     try testing.expectEqual(@as(usize, 4), diff.install_tools.len);
     try testing.expectEqual(@as(usize, 2), diff.add_configs.len);
-    try testing.expectEqual(@as(usize, 0), diff.deactivate_tools.len);
+    try testing.expectEqual(@as(usize, 0), diff.remove_tools.len);
     try testing.expect(diff.release_change == null);
     try testing.expect(!diff.isEmpty());
 }
 
-test "diff installs and deactivates only the difference" {
+test "diff installs and removes only the difference" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
@@ -390,8 +390,8 @@ test "diff installs and deactivates only the difference" {
     for (expected_install, diff.install_tools) |want, got| {
         try testing.expectEqualStrings(want, got);
     }
-    try testing.expectEqual(@as(usize, 1), diff.deactivate_tools.len);
-    try testing.expectEqualStrings("alacritty", diff.deactivate_tools[0]);
+    try testing.expectEqual(@as(usize, 1), diff.remove_tools.len);
+    try testing.expectEqualStrings("alacritty", diff.remove_tools[0]);
     try testing.expectEqual(@as(usize, 1), diff.add_configs.len);
     try testing.expectEqualStrings("tmux-config", diff.add_configs[0]);
     try testing.expectEqual(@as(usize, 1), diff.remove_configs.len);
@@ -420,7 +420,7 @@ test "diff reinstalls all tools on release change" {
 
     const diff = try computeDiff(alloc, testLock("0.2.0"), test_resolve_response, receipt);
     try testing.expectEqual(@as(usize, 4), diff.install_tools.len);
-    try testing.expectEqual(@as(usize, 0), diff.deactivate_tools.len);
+    try testing.expectEqual(@as(usize, 0), diff.remove_tools.len);
     try testing.expectEqualStrings("0.1.0", diff.release_change.?.from);
     try testing.expectEqualStrings("0.2.0", diff.release_change.?.to);
 }

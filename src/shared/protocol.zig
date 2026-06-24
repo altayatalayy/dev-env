@@ -177,6 +177,7 @@ pub const ToolKind = enum {
 pub const ToolInfo = struct {
     name: []const u8,
     description: []const u8,
+    platforms: []const platform.Support = &.{},
 };
 
 pub const ConfigInfo = struct {
@@ -260,8 +261,8 @@ pub const ApplyRequest = struct {
     tools: []const []const u8,
     /// Tools to install/activate; a subset of `tools`.
     install: []const []const u8,
-    /// Tools whose executables must be deactivated; installed versions are
-    /// kept on disk until `dev-env clean`.
+    /// Legacy apply-time link deactivation. Normal plan removals call the
+    /// installer's `uninstall` command so release-owned tool files are removed.
     deactivate: []const []const u8,
 };
 
@@ -270,6 +271,7 @@ pub const InstalledTool = struct {
     kind: ToolKind,
     version: []const u8,
     opt_dir: ?[]const u8 = null,
+    env_exports: []const EnvExport = &.{},
     /// Absolute paths of symlinks created in ~/.local/bin.
     bin_links: []const []const u8 = &.{},
 };

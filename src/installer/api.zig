@@ -35,7 +35,7 @@ pub const Env = struct {
 pub const Progress = progress_mod.Progress;
 
 fn checkPlatform(p: platform.Platform) error{UnsupportedPlatform}!void {
-    if (!platform.isSupported(&release.supported_platforms, p)) {
+    if (!release.supportsPlatform(p)) {
         return error.UnsupportedPlatform;
     }
 }
@@ -46,6 +46,7 @@ pub fn metadata(alloc: std.mem.Allocator) !proto.MetadataResponse {
         try tool_infos.append(alloc, .{
             .name = @tagName(def.id),
             .description = def.description,
+            .platforms = def.platforms,
         });
     }
 
@@ -62,7 +63,7 @@ pub fn metadata(alloc: std.mem.Allocator) !proto.MetadataResponse {
     return .{
         .protocol = proto.version,
         .release = release.name,
-        .platforms = &release.supported_platforms,
+        .platforms = try release.supportedPlatforms(alloc),
         .tools = tool_infos.items,
         .configs = config_infos.items,
     };
@@ -146,7 +147,10 @@ test metadata {
     try std.testing.expectEqualStrings(release.name, meta.release);
     try std.testing.expectEqual(release.tool_defs.len, meta.tools.len);
     try std.testing.expectEqual(countConfigs(), meta.configs.len);
-    try std.testing.expect(meta.platforms.len > 0);
+    try std.testing.expectEqual(@as(usize, 3), meta.platforms.len);
+    for (meta.tools) |tool| {
+        try std.testing.expect(tool.platforms.len > 0);
+    }
 
     // Release data must form a valid dependency graph.
     try @import("resolver.zig").validate(alloc, release.defs);

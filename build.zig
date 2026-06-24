@@ -68,7 +68,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "shared", .module = shared_mod },
-            .{ .name = "cli", .module = cli_mod },
             .{ .name = "graph", .module = graph_mod },
         },
     });

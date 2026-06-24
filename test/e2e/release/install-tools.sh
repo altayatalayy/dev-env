@@ -6,7 +6,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if ! . "${SCRIPT_DIR}/../integration/common.sh"; then
+if ! . "${SCRIPT_DIR}/../fake/common.sh"; then
     echo "failed to load test helpers" >&2
     exit 1
 fi
@@ -100,6 +100,10 @@ case ",${TOOLS_CSV}," in
             echo "tmux plugin manager validation failed" >&2
             exit 1
         fi
+        if ! test -d "${HOME}/.local/share/tmux/plugins/tpm/.git"; then
+            echo "tmux plugin manager checkout metadata missing" >&2
+            exit 1
+        fi
         ;;
 esac
 
@@ -130,4 +134,4 @@ case ",${TOOLS_CSV}," in
         ;;
 esac
 
-echo "install integration tests passed for ${TOOLS_CSV}"
+echo "install release e2e tests passed for ${TOOLS_CSV}"

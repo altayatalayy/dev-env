@@ -17,6 +17,7 @@ const resolver = @import("resolver.zig");
 const release = @import("release.zig");
 const layout_mod = @import("layout.zig");
 const steps_mod = @import("steps.zig");
+const git = @import("git.zig");
 const progress_mod = @import("progress.zig");
 
 pub const Env = struct {
@@ -36,25 +37,24 @@ pub fn apply(
     progress: ?*progress_mod.Progress,
     req: proto.ApplyRequest,
 ) !proto.ApplyResponse {
-    const pm = req.platform.packageManager();
     var step_env = try steps_mod.stepEnviron(
         alloc,
         env.environ_map,
         env.layout,
         release.defs,
-        pm,
+        req.platform,
         req.tools,
     );
     defer step_env.deinit();
 
     var installed: std.ArrayList(proto.InstalledTool) = .empty;
 
-    const ordered = try resolver.installOrder(alloc, release.defs, pm, req.install);
+    const ordered = try resolver.installOrder(alloc, release.defs, req.platform, req.install);
     for (ordered) |name| {
         if (progress) |p| try p.emit(.{ .event = "install_started", .tool = name });
         const id = try resolver.toolByName(release.defs, name);
-        const method = release.defs.tool(id).?.method(pm) orelse {
-            std.log.err("{s} is not available via {t}", .{ name, pm });
+        const method = release.defs.tool(id).?.method(req.platform) orelse {
+            std.log.err("{s} is not available on {f}", .{ name, req.platform });
             return error.UnsupportedPlatform;
         };
         switch (method.method) {
@@ -73,7 +73,16 @@ pub fn apply(
             ),
             .official => |o| try installed.append(
                 alloc,
-                try installOfficial(alloc, io, env.layout, &step_env, progress, name, o),
+                try installOfficial(
+                    alloc,
+                    io,
+                    env.layout,
+                    &step_env,
+                    req.platform.packageManager(),
+                    progress,
+                    name,
+                    o,
+                ),
             ),
         }
         if (progress) |p| try p.emit(.{ .event = "install_finished", .tool = name });
@@ -82,7 +91,7 @@ pub fn apply(
     for (req.deactivate) |name| {
         if (progress) |p| try p.emit(.{ .event = "step_started", .tool = name, .detail = "deactivate" });
         const id = try resolver.toolByName(release.defs, name);
-        const method = release.defs.tool(id).?.method(pm) orelse continue;
+        const method = release.defs.tool(id).?.method(req.platform) orelse continue;
         switch (method.method) {
             .system, .official => {},
             .archive => |a| try deactivateBinLinks(alloc, io, env.layout, name, a.bin_links),
@@ -100,13 +109,12 @@ pub fn applyConfigs(
     progress: ?*progress_mod.Progress,
     req: proto.ConfigApplyRequest,
 ) !proto.ConfigApplyResponse {
-    const pm = req.platform.packageManager();
     var step_env = try steps_mod.stepEnviron(
         alloc,
         env.environ_map,
         env.layout,
         release.defs,
-        pm,
+        req.platform,
         req.tools,
     );
     defer step_env.deinit();
@@ -116,6 +124,17 @@ pub fn applyConfigs(
         const id = try resolver.configByName(release.defs, name);
         const def = release.defs.config(id).?;
         if (progress) |p| try p.emit(.{ .event = "config_apply_started", .config = name });
+        for (def.git_checkouts) |checkout| {
+            try git.ensureCheckout(
+                alloc,
+                io,
+                progress,
+                name,
+                checkout,
+                layoutVars(env.layout),
+                &step_env,
+            );
+        }
         try steps_mod.runSteps(alloc, io, progress, .{ .config = name }, def.install_steps, .{
             .vars = layoutVars(env.layout),
             .env = &step_env,
@@ -131,10 +150,16 @@ fn installOfficial(
     io: std.Io,
     layout: layout_mod.Layout,
     step_env: *const std.process.Environ.Map,
+    package_manager: platform.PackageManager,
     progress: ?*progress_mod.Progress,
     name: []const u8,
     official: tools.OfficialInstaller,
 ) !proto.InstalledTool {
+    _ = try package_manager.remove(alloc, io, official.conflicting_packages, .{});
+    for (official.repositories) |repository| {
+        try package_manager.addRepository(alloc, io, repository);
+    }
+    _ = try package_manager.install(alloc, io, official.packages, .{});
     try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, official.install_steps, .{
         .vars = layoutVars(layout),
         .env = step_env,
