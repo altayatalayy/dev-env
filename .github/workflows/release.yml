@@ -39,6 +39,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify release tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          tag_commit="$(git ls-remote origin "refs/tags/${tag}^{}" | cut -f1)"
+          if [ -z "${tag_commit}" ]; then
+              tag_commit="$(git ls-remote origin "refs/tags/${tag}" | cut -f1)"
+          fi
+          if [ -n "${tag_commit}" ] && [ "${tag_commit}" != "${GITHUB_SHA}" ]; then
+              echo "${tag} points to ${tag_commit}, not the checked-out commit ${GITHUB_SHA}" >&2
+              exit 1
+          fi
+
       - name: Install Zig
         uses: mlugg/setup-zig@v2.2.1
         with:
@@ -64,6 +78,6 @@ jobs:
               exit 1
           fi
           if ! gh release view "${tag}" >/dev/null 2>&1; then
-              gh release create "${tag}" --title "${tag}" --generate-notes
+              gh release create "${tag}" --target "${GITHUB_SHA}" --title "${tag}" --generate-notes
           fi
           gh release upload "${tag}" "${assets_dir}"/* --clobber
