@@ -7,7 +7,6 @@
 
 const std = @import("std");
 const shared = @import("shared");
-const proto = shared.protocol;
 const platform = shared.platform;
 const runner = shared.runner;
 const templates = shared.templates;
@@ -285,7 +284,7 @@ test stepEnviron {
         },
     };
     const defs: resolver.Defs = .{ .tools = &test_tools };
-    const layout = try layout_mod.Layout.init(alloc, "/h", .{
+    const layout = try layout_mod.Layout.init("/h", .{
         .bin = "/h/.local/bin",
         .opt = "/h/.local/share/dev-env/tools",
         .cache_dir = "/c",

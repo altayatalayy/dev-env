@@ -2,7 +2,6 @@
 
 const std = @import("std");
 const shared = @import("shared");
-const proto = shared.protocol;
 const templates = shared.templates;
 const paths_mod = @import("paths.zig");
 const receipt_mod = @import("receipt.zig");

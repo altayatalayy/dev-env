@@ -5,7 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
-PROTOCOL = 1
+PROTOCOL = 2
 TOOLS = ["tmux", "neovim", "zig", "go", "rust", "alacritty", "docker"]
 CONFIGS = {
     "tmux": ("tmux-config", "tmux"),
@@ -169,9 +169,6 @@ def apply() -> None:
         progress("apply", {"event": "install_started", "tool": tool})
         tools.append(make_tool(req, tool))
         progress("apply", {"event": "install_finished", "tool": tool})
-
-    for tool in req.get("deactivate", []):
-        remove_tool(req, tool)
 
     emit("apply", {"tools": tools})
 

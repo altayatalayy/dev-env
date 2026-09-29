@@ -5,10 +5,12 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zig_cli = .{
-            .path = "../zig-cli",
+            .url = "git+https://github.com/altayatalayy/zig-cli.git#4dd9627d283fa4d541c3dd5e92a67ba41ed8efdc",
+            .hash = "zig_cli-0.1.0-ezGa--jrAABm088wEykJ1_lEv9559K7muedJOye38C2P",
         },
         .zig_graph = .{
-            .path = "../zig-graph",
+            .url = "git+https://github.com/altayatalayy/zig-graph.git#edb8e81b8cfe47cbd8e66ce3672f9874b86e7f49",
+            .hash = "zig_graph-0.1.0-ehSuii_zAAAK_eEVRIJdanXICvaFU1t7azxQffWcZiF6",
         },
     },
     .paths = .{

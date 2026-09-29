@@ -86,6 +86,31 @@ pub const Method = union(enum) {
     system: System,
     source: SourceBuild,
     official: OfficialInstaller,
+
+    pub fn dependencies(m: Method) struct {
+        install: Dependencies,
+        runtime: Dependencies,
+    } {
+        return switch (m) {
+            .source => |source| .{
+                .install = source.build_dependencies,
+                .runtime = source.runtime_dependencies,
+            },
+            .official => |official| .{
+                .install = official.install_dependencies,
+                .runtime = .{},
+            },
+            .archive, .system => .{ .install = .{}, .runtime = .{} },
+        };
+    }
+
+    pub fn binLinks(m: Method) ?[]const Archive.BinLink {
+        return switch (m) {
+            .archive => |archive| archive.bin_links,
+            .source => |source| source.bin_links,
+            .system, .official => null,
+        };
+    }
 };
 
 pub const Step = struct {

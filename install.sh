@@ -2,21 +2,27 @@
 # Installs (or uninstalls) the dev-env launcher from a release server.
 #
 # usage:
+#   install.sh --github <owner/repo>
 #   install.sh --release-root-url http://server/releases
-#   install.sh --release-root-url http://server/releases --uninstall
+#   install.sh --github <owner/repo> --uninstall
 #
-# The release root must serve:
+# --github resolves releases from GitHub Releases:
+#   https://api.github.com/repos/<owner/repo>/releases/latest   -> tag_name
+#   https://github.com/<owner/repo>/releases/download/<tag>/...  -> assets
+#
+# --release-root-url targets a self-hosted server that must serve:
 #   <release-root-url>/latest.json            {"tag_name":"v<version>", ...}
-#   <release-root-url>/download/<tag>/...     release assets
+#   <release-root-url>/download/<tag>/...      release assets
 #
 # Managed, versioned install layout:
 #   ~/.local/share/dev-env/bin/<version>/dev-env
 #   ~/.local/share/dev-env/installers/<version>/dev-env-install
-#   ~/.local/share/dev-env/installers/<version>/release.json
 #   ~/.local/bin/dev-env -> ~/.local/share/dev-env/bin/<version>/dev-env
 
 RELEASE_ROOT_URL=""
+GITHUB_REPO=""
 MODE="install"
+ASSUME_YES=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -31,8 +37,22 @@ while [ $# -gt 0 ]; do
         --release-root-url=*)
             RELEASE_ROOT_URL="${1#--release-root-url=}"
             ;;
+        --github)
+            shift
+            if [ $# -eq 0 ]; then
+                echo "--github requires a value" >&2
+                exit 1
+            fi
+            GITHUB_REPO="$1"
+            ;;
+        --github=*)
+            GITHUB_REPO="${1#--github=}"
+            ;;
         --uninstall)
             MODE="uninstall"
+            ;;
+        --yes|-y)
+            ASSUME_YES="1"
             ;;
         *)
             echo "unknown argument: $1" >&2
@@ -42,11 +62,20 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ -z "${RELEASE_ROOT_URL}" ]; then
-    echo "missing required --release-root-url <url>" >&2
+if [ -n "${GITHUB_REPO}" ] && [ -n "${RELEASE_ROOT_URL}" ]; then
+    echo "use either --github or --release-root-url, not both" >&2
+    exit 1
+fi
+if [ -z "${GITHUB_REPO}" ] && [ -z "${RELEASE_ROOT_URL}" ]; then
+    echo "missing required --github <owner/repo> or --release-root-url <url>" >&2
     exit 1
 fi
 RELEASE_ROOT_URL="${RELEASE_ROOT_URL%/}"
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "missing required tool: curl" >&2
+    exit 1
+fi
 
 DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}"
 STATE_DIR="${DATA_DIR}/dev-env"
@@ -56,6 +85,34 @@ LAUNCHER="${BIN_DIR}/dev-env"
 # --- uninstall ---------------------------------------------------------------
 
 if [ "${MODE}" = "uninstall" ]; then
+    # Refuse to delete a directory that is not recognizably dev-env state, so a
+    # misconfigured XDG_DATA_HOME or a typo cannot wipe unrelated files.
+    if [ -d "${STATE_DIR}" ]; then
+        if [ ! -d "${STATE_DIR}/bin" ] && [ ! -d "${STATE_DIR}/installers" ] &&
+            [ ! -d "${STATE_DIR}/releases" ]; then
+            echo "refusing to remove ${STATE_DIR}: does not look like dev-env state" >&2
+            exit 1
+        fi
+
+        # rm -rf is destructive; require an explicit confirmation unless --yes.
+        if [ -z "${ASSUME_YES}" ]; then
+            if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+                echo "refusing to remove ${STATE_DIR} without confirmation; re-run with --yes" >&2
+                exit 1
+            fi
+            printf 'remove dev-env state at %s? [y/N] ' "${STATE_DIR}" >&3
+            read -r reply <&3
+            exec 3<&-
+            case "${reply}" in
+                y | Y | yes | YES) ;;
+                *)
+                    echo "aborted" >&2
+                    exit 1
+                    ;;
+            esac
+        fi
+    fi
+
     # Only remove the launcher if it is a symlink pointing into managed state;
     # never touch unrelated regular files or symlinks outside dev-env state.
     if [ -L "${LAUNCHER}" ]; then
@@ -88,13 +145,11 @@ fi
 
 # --- platform detection ------------------------------------------------------
 
-OS="$(uname -s)"
-if [ $? -ne 0 ]; then
+if ! OS="$(uname -s)"; then
     echo "failed to detect operating system" >&2
     exit 1
 fi
-ARCH="$(uname -m)"
-if [ $? -ne 0 ]; then
+if ! ARCH="$(uname -m)"; then
     echo "failed to detect architecture" >&2
     exit 1
 fi
@@ -120,8 +175,7 @@ ASSET_SUFFIX="${OS}-${ARCH}"
 
 # --- temp workspace ----------------------------------------------------------
 
-TMP_DIR="$(mktemp -d)"
-if [ $? -ne 0 ]; then
+if ! TMP_DIR="$(mktemp -d)"; then
     echo "failed to create temporary directory" >&2
     exit 1
 fi
@@ -135,21 +189,31 @@ trap cleanup EXIT
 # --- resolve release ---------------------------------------------------------
 
 LATEST_JSON="${TMP_DIR}/latest.json"
+if [ -n "${GITHUB_REPO}" ]; then
+    LATEST_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+else
+    LATEST_URL="${RELEASE_ROOT_URL}/latest.json"
+fi
+
 if ! curl --fail --location --show-error --silent \
-    "${RELEASE_ROOT_URL}/latest.json" \
+    "${LATEST_URL}" \
     --output "${LATEST_JSON}"; then
-    echo "failed to read ${RELEASE_ROOT_URL}/latest.json" >&2
+    echo "failed to read ${LATEST_URL}" >&2
     exit 1
 fi
 
 TAG="$(sed -n 's/.*"tag_name" *: *"\([^"]*\)".*/\1/p' "${LATEST_JSON}" | head -n 1)"
 if [ -z "${TAG}" ]; then
-    echo "latest.json did not include tag_name" >&2
+    echo "${LATEST_URL} did not include tag_name" >&2
     exit 1
 fi
 VERSION="${TAG#v}"
 
-DOWNLOAD_URL="${RELEASE_ROOT_URL}/download/${TAG}"
+if [ -n "${GITHUB_REPO}" ]; then
+    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}"
+else
+    DOWNLOAD_URL="${RELEASE_ROOT_URL}/download/${TAG}"
+fi
 
 if ! curl --fail --location --show-error \
     "${DOWNLOAD_URL}/dev-env-${ASSET_SUFFIX}" \
@@ -187,12 +251,6 @@ fi
 
 if ! mv "${TMP_DIR}/dev-env-install" "${INSTALLER_DIR}/dev-env-install"; then
     echo "failed to install dev-env-install" >&2
-    exit 1
-fi
-
-if ! printf '{"tag_name":"%s","release_root_url":"%s"}\n' \
-    "${TAG}" "${RELEASE_ROOT_URL}" > "${INSTALLER_DIR}/release.json"; then
-    echo "failed to write release.json sidecar" >&2
     exit 1
 fi
 

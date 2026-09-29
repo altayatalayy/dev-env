@@ -15,7 +15,10 @@ pub const Paths = struct {
     releases: []const u8,
     stow_source: []const u8,
     backups: []const u8,
-    launcher: []const u8,
+    /// Versioned dev-env launcher binaries, written by install.sh as
+    /// <launchers>/<version>/dev-env. The `dev-env` symlink in `bin` points
+    /// into here.
+    launchers: []const u8,
     /// Executable links. Defaults to ~/.local/bin because XDG has no bin dir.
     bin: []const u8,
     /// Versioned tool installs. Defaults to $XDG_DATA_HOME/dev-env/tools.
@@ -48,7 +51,7 @@ pub const Paths = struct {
             .releases = try std.fmt.allocPrint(alloc, "{s}/releases", .{data}),
             .stow_source = try std.fmt.allocPrint(alloc, "{s}/stow-source", .{data}),
             .backups = try std.fmt.allocPrint(alloc, "{s}/backups", .{data}),
-            .launcher = try std.fmt.allocPrint(alloc, "{s}/launcher", .{data}),
+            .launchers = try std.fmt.allocPrint(alloc, "{s}/bin", .{data}),
             .bin = try std.fmt.allocPrint(alloc, "{s}/.local/bin", .{home}),
             .opt = try std.fmt.allocPrint(alloc, "{s}/tools", .{data}),
         };
@@ -87,6 +90,9 @@ test Paths {
     try std.testing.expectEqualStrings("/home/u/.local/share/dev-env/installed.json", p.installed);
     try std.testing.expectEqualStrings("/home/u/.local/bin", p.bin);
     try std.testing.expectEqualStrings("/home/u/.local/share/dev-env/tools", p.opt);
+    // install.sh writes the launcher to <data>/bin/<version>/dev-env; uninstall
+    // must remove that tree, not a directory nothing ever creates.
+    try std.testing.expectEqualStrings("/home/u/.local/share/dev-env/bin", p.launchers);
 
     try std.testing.expectEqualStrings(
         "/home/u/.local/share/dev-env/installers/0.2.0/dev-env-install",

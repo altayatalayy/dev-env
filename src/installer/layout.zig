@@ -3,6 +3,7 @@
 //! relocate installs by changing one place.
 
 const std = @import("std");
+const templates = @import("shared").templates;
 
 pub const Layout = struct {
     home: []const u8,
@@ -14,7 +15,6 @@ pub const Layout = struct {
     cache_dir: []const u8,
 
     pub fn init(
-        alloc: std.mem.Allocator,
         home: []const u8,
         install: @import("shared").protocol.InstallLayout,
     ) !Layout {
@@ -22,7 +22,6 @@ pub const Layout = struct {
         if (!std.fs.path.isAbsolute(install.bin)) return error.BinNotAbsolute;
         if (!std.fs.path.isAbsolute(install.opt)) return error.OptNotAbsolute;
         if (!std.fs.path.isAbsolute(install.cache_dir)) return error.CacheNotAbsolute;
-        _ = alloc;
         return .{
             .home = home,
             .bin = install.bin,
@@ -47,6 +46,15 @@ pub const Layout = struct {
     pub fn binLink(l: Layout, alloc: std.mem.Allocator, name: []const u8) ![]u8 {
         return std.fmt.allocPrint(alloc, "{s}/{s}", .{ l.bin, name });
     }
+
+    pub fn vars(l: Layout) templates.Vars {
+        return .{
+            .home = l.home,
+            .cache_dir = l.cache_dir,
+            .bin = l.bin,
+            .opt = l.opt,
+        };
+    }
 };
 
 // --- tests ---
@@ -56,7 +64,7 @@ test Layout {
     defer arena_state.deinit();
     const alloc = arena_state.allocator();
 
-    const layout = try Layout.init(alloc, "/home/u", .{
+    const layout = try Layout.init("/home/u", .{
         .bin = "/xdg/bin",
         .opt = "/xdg/share/dev-env/tools",
         .cache_dir = "/xdg/cache/dev-env/downloads",
@@ -69,12 +77,12 @@ test Layout {
     );
     try std.testing.expectEqualStrings("/xdg/bin/go", try layout.binLink(alloc, "go"));
 
-    try std.testing.expectError(error.HomeNotAbsolute, Layout.init(alloc, "relative", .{
+    try std.testing.expectError(error.HomeNotAbsolute, Layout.init("relative", .{
         .bin = "/b",
         .opt = "/o",
         .cache_dir = "/c",
     }));
-    try std.testing.expectError(error.OptNotAbsolute, Layout.init(alloc, "/home/u", .{
+    try std.testing.expectError(error.OptNotAbsolute, Layout.init("/home/u", .{
         .bin = "/b",
         .opt = "o",
         .cache_dir = "/c",

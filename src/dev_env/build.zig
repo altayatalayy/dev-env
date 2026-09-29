@@ -82,7 +82,6 @@ pub fn run(
         .layout = paths.installLayout(),
         .tools = resolved.resolved_tools,
         .install = resolved.resolved_tools,
-        .deactivate = &.{},
     });
 
     var additions: std.ArrayList(manifest_mod.Entry) = .empty;

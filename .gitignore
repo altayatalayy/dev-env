@@ -1,3 +1,22 @@
 zig-out/
 .zig-cache/
+zig-cache/
+zig-pkg/
 build/
+
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+.direnv/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# formal verification workspaces
+formal/lean/.lake/
+formal/tla/.tools/
+formal/tla/states/

@@ -106,6 +106,34 @@ fn copyFile(alloc: std.mem.Allocator, io: std.Io, source: []const u8, target: []
 
 // --- tests ---
 
+// `ConfigDef.stow_package` names a directory inside this archive, but nothing
+// links the two declarations. A typo would only surface at apply time, as a
+// FileNotFound while scanning the package for conflicts.
+test "every config's stow package is provided by the dotfiles archive" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const release = @import("release.zig");
+    const names = try packages(alloc);
+
+    for (release.tool_defs) |tool| {
+        for (tool.configs) |config| {
+            var provided = false;
+            for (names) |name| {
+                if (std.mem.eql(u8, name, config.stow_package)) provided = true;
+            }
+            if (!provided) {
+                std.log.err("config {s} wants stow package {s}, which the dotfiles archive does not provide", .{
+                    @tagName(config.id),
+                    config.stow_package,
+                });
+                return error.MissingStowPackage;
+            }
+        }
+    }
+}
+
 test packages {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

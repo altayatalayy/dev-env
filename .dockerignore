@@ -1,10 +1,10 @@
 .git
 .zig-cache
 zig-cache
+zig-pkg
 zig-out
 build
 
 .agents
 .claude
 .codex
-

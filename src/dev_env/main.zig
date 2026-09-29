@@ -102,7 +102,7 @@ fn runDoctor(
     else if (lock) |l|
         try client.local(alloc, io, l.installer_path)
     else
-        try selectedInstaller(alloc, io, paths, host, null);
+        try newestInstaller(alloc, io, paths, host);
     if (!inst.protocolSupported()) return error.UnsupportedProtocol;
     if (!inst.supportsPlatform(host)) return error.UnsupportedPlatform;
     std.log.info("installer: {s} ({s})", .{ inst.release, inst.bin_path });
@@ -145,19 +145,13 @@ fn runDoctor(
     }
 }
 
-fn selectedInstaller(
+/// Installer to report on when neither installed.json nor lock.json names one.
+fn newestInstaller(
     alloc: std.mem.Allocator,
     io: std.Io,
     paths: paths_mod.Paths,
     host: platform.Platform,
-    maybe_path: ?[]const u8,
 ) !client.Installer {
-    if (maybe_path) |path| return client.local(alloc, io, path);
-
-    if (try planner.loadLock(alloc, io, paths)) |lock| {
-        return client.local(alloc, io, lock.installer_path);
-    }
-
     const installers = try client.discover(alloc, io, paths);
     return (try client.newestCompatible(installers, host)) orelse error.NoCompatibleInstaller;
 }
@@ -179,12 +173,17 @@ fn checkStowState(
 
 test {
     _ = @import("cli.zig");
+    _ = @import("paths.zig");
+    _ = @import("host_detect.zig");
     _ = @import("planner.zig");
     _ = @import("apply.zig");
     _ = @import("build.zig");
+    _ = @import("clean.zig");
     _ = @import("configs.zig");
     _ = @import("stow.zig");
     _ = @import("exports.zig");
+    _ = @import("uninstall.zig");
     _ = @import("receipt.zig");
+    _ = @import("installer_client.zig");
     _ = @import("system/manager.zig");
 }

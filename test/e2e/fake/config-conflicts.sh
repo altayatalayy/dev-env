@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-if [ $? -ne 0 ]; then
+if ! SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"; then
     echo "failed to locate fake e2e script directory" >&2
     exit 1
 fi
@@ -70,6 +69,32 @@ if ! grep --fixed-strings "local tmux config" "${HOME}/.config/tmux/tmux.conf" >
     exit 1
 fi
 if ! dev_env_json_assert contains "${XDG_DATA_HOME}/dev-env/installed.json" skipped_configs tmux-config; then exit 1; fi
+
+# A locally modified managed config kept by the skip policy must stay linked:
+# dropping its stow-source entry would leave the $HOME symlinks dangling.
+if ! prepare_case skip-modified; then exit 1; fi
+if ! "${DEV_ENV}" apply --config-conflict=fail; then
+    echo "initial apply failed" >&2
+    exit 1
+fi
+if ! printf '%s\n' "my own tmux settings" > "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi
+if ! "${DEV_ENV}" plan --installer 0.1.0 --add neovim >/dev/null; then
+    echo "plan --add failed" >&2
+    exit 1
+fi
+if ! "${DEV_ENV}" apply --config-conflict=skip; then
+    echo "skip policy failed for a modified managed config" >&2
+    exit 1
+fi
+if ! grep --fixed-strings "my own tmux settings" "${HOME}/.config/tmux/tmux.conf" >/dev/null; then
+    echo "skip policy left the modified config unreadable" >&2
+    exit 1
+fi
+if ! test -e "${XDG_DATA_HOME}/dev-env/stow-source/tmux"; then
+    echo "skip policy removed the stow-source entry of a stowed package" >&2
+    exit 1
+fi
+if ! dev_env_json_assert contains "${XDG_DATA_HOME}/dev-env/installed.json" stow_packages tmux; then exit 1; fi
 
 if ! prepare_case fail-dir; then exit 1; fi
 if ! mkdir --parents "${HOME}/.config/tmux/tmux.conf"; then exit 1; fi

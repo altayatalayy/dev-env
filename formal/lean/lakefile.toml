@@ -1,0 +1,5 @@
+name = "devenv"
+defaultTargets = ["DevEnv"]
+
+[[lean_lib]]
+name = "DevEnv"

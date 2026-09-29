@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-if [ $? -ne 0 ]; then
+if ! SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"; then
     echo "failed to locate fake e2e script directory" >&2
     exit 1
 fi
@@ -48,8 +47,24 @@ if ! test -d "${XDG_DATA_HOME}/dev-env/tools/tmux/0.2.0"; then
     exit 1
 fi
 
+# install.sh puts the launcher binaries under <data>/bin/<version>; uninstall
+# has to reclaim that tree too, not just the installers.
+LAUNCHER_DIR="${XDG_DATA_HOME}/dev-env/bin/0.2.0"
+if ! mkdir --parents "${LAUNCHER_DIR}"; then
+    echo "failed to stage launcher directory" >&2
+    exit 1
+fi
+if ! cp "${DEV_ENV}" "${LAUNCHER_DIR}/dev-env"; then
+    echo "failed to stage launcher binary" >&2
+    exit 1
+fi
+
 if ! "${DEV_ENV}" uninstall --config-conflict=backup; then
     echo "uninstall failed" >&2
+    exit 1
+fi
+if test -d "${XDG_DATA_HOME}/dev-env/bin"; then
+    echo "uninstall kept the launcher directory" >&2
     exit 1
 fi
 if test -f "${XDG_DATA_HOME}/dev-env/installed.json"; then

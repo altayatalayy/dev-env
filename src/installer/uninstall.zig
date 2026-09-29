@@ -37,21 +37,19 @@ pub fn uninstall(
         if (progress) |p| try p.emit(.{ .event = "step_started", .tool = name, .detail = "uninstall" });
         const id = try resolver.toolByName(release.defs, name);
         const method = release.defs.tool(id).?.method(req.platform) orelse continue;
+        if (method.method.binLinks()) |links| {
+            try uninstallOwnedPrefix(alloc, io, env, name, links, &removed);
+            continue;
+        }
         switch (method.method) {
             .system => try kept_system.append(alloc, name),
-            .archive => |a| try uninstallOwnedPrefix(alloc, io, env, name, a.bin_links, &removed),
-            .source => |s| try uninstallOwnedPrefix(alloc, io, env, name, s.bin_links, &removed),
+            .archive, .source => unreachable,
             .official => |o| {
                 if (o.uninstall_steps.len == 0) {
                     try kept_system.append(alloc, name);
                 } else {
                     try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, o.uninstall_steps, .{
-                        .vars = .{
-                            .home = env.layout.home,
-                            .cache_dir = env.layout.cache_dir,
-                            .bin = env.layout.bin,
-                            .opt = env.layout.opt,
-                        },
+                        .vars = env.layout.vars(),
                         .env = &step_env,
                     });
                     try removed.append(alloc, name);

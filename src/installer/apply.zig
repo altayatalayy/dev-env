@@ -88,17 +88,6 @@ pub fn apply(
         if (progress) |p| try p.emit(.{ .event = "install_finished", .tool = name });
     }
 
-    for (req.deactivate) |name| {
-        if (progress) |p| try p.emit(.{ .event = "step_started", .tool = name, .detail = "deactivate" });
-        const id = try resolver.toolByName(release.defs, name);
-        const method = release.defs.tool(id).?.method(req.platform) orelse continue;
-        switch (method.method) {
-            .system, .official => {},
-            .archive => |a| try deactivateBinLinks(alloc, io, env.layout, name, a.bin_links),
-            .source => |s| try deactivateBinLinks(alloc, io, env.layout, name, s.bin_links),
-        }
-    }
-
     return .{ .tools = installed.items };
 }
 
@@ -131,12 +120,12 @@ pub fn applyConfigs(
                 progress,
                 name,
                 checkout,
-                layoutVars(env.layout),
+                env.layout.vars(),
                 &step_env,
             );
         }
         try steps_mod.runSteps(alloc, io, progress, .{ .config = name }, def.install_steps, .{
-            .vars = layoutVars(env.layout),
+            .vars = env.layout.vars(),
             .env = &step_env,
         });
         if (progress) |p| try p.emit(.{ .event = "config_apply_finished", .config = name });
@@ -161,7 +150,7 @@ fn installOfficial(
     }
     _ = try package_manager.install(alloc, io, official.packages, .{});
     try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, official.install_steps, .{
-        .vars = layoutVars(layout),
+        .vars = layout.vars(),
         .env = step_env,
     });
     return .{
@@ -193,7 +182,7 @@ fn installSource(
         if (std.fs.path.dirname(dest)) |parent| try cwd.createDirPath(io, parent);
         try steps_mod.runSteps(alloc, io, progress, .{ .tool = name }, source.build_steps, .{
             .cwd = build_dir,
-            .vars = layoutVarsWithPrefix(layout, dest),
+            .vars = varsWithPrefix(layout, dest),
             .env = step_env,
         });
         if (progress) |p| try p.emit(.{ .event = "build_finished", .tool = name, .detail = source.version });
@@ -210,17 +199,8 @@ fn installSource(
     };
 }
 
-fn layoutVars(layout: layout_mod.Layout) steps_mod.Vars {
-    return .{
-        .home = layout.home,
-        .cache_dir = layout.cache_dir,
-        .bin = layout.bin,
-        .opt = layout.opt,
-    };
-}
-
-fn layoutVarsWithPrefix(layout: layout_mod.Layout, prefix: []const u8) steps_mod.Vars {
-    var vars = layoutVars(layout);
+fn varsWithPrefix(layout: layout_mod.Layout, prefix: []const u8) steps_mod.Vars {
+    var vars = layout.vars();
     vars.prefix = prefix;
     return vars;
 }
@@ -278,26 +258,6 @@ fn activateBinLinks(
         try links.append(alloc, link_path);
     }
     return links.items;
-}
-
-/// Removes layout bin links, but only the ones that actually point into the
-/// tool's own prefix.
-fn deactivateBinLinks(
-    alloc: std.mem.Allocator,
-    io: std.Io,
-    layout: layout_mod.Layout,
-    name: []const u8,
-    bin_links: []const tools.Archive.BinLink,
-) !void {
-    const owned_prefix = try layout.toolDir(alloc, name);
-    for (bin_links) |link| {
-        const link_path = try layout.binLink(alloc, link.name);
-        var buffer: [std.fs.max_path_bytes]u8 = undefined;
-        const len = std.Io.Dir.readLinkAbsolute(io, link_path, &buffer) catch continue;
-        if (std.mem.startsWith(u8, buffer[0..len], owned_prefix)) {
-            try std.Io.Dir.deleteFileAbsolute(io, link_path);
-        }
-    }
 }
 
 fn replaceSymlink(
@@ -456,7 +416,7 @@ test "apply config command accepts empty config list" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const layout = try layout_mod.Layout.init(alloc, home, .{
+    const layout = try layout_mod.Layout.init(home, .{
         .bin = try std.fs.path.join(alloc, &.{ home, "bin" }),
         .opt = try std.fs.path.join(alloc, &.{ home, "opt" }),
         .cache_dir = try std.fs.path.join(alloc, &.{ home, ".cache" }),
@@ -489,7 +449,7 @@ test "apply installs system tools dependency-first" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const layout = try layout_mod.Layout.init(alloc, home, .{
+    const layout = try layout_mod.Layout.init(home, .{
         .bin = try std.fs.path.join(alloc, &.{ home, "bin" }),
         .opt = try std.fs.path.join(alloc, &.{ home, "opt" }),
         .cache_dir = try std.fs.path.join(alloc, &.{ home, ".cache" }),
@@ -509,7 +469,6 @@ test "apply installs system tools dependency-first" {
         .layout = .{ .bin = layout.bin, .opt = layout.opt, .cache_dir = layout.cache_dir },
         .tools = &.{ "alacritty", "rust" },
         .install = &.{ "alacritty", "rust" },
-        .deactivate = &.{},
     });
 
     try std.testing.expectEqual(@as(usize, 2), resp.tools.len);
@@ -528,7 +487,7 @@ test "replaceSymlink only replaces managed executable links" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const layout = try layout_mod.Layout.init(alloc, home, .{
+    const layout = try layout_mod.Layout.init(home, .{
         .bin = try std.fmt.allocPrint(alloc, "{s}/bin", .{home}),
         .opt = try std.fmt.allocPrint(alloc, "{s}/opt", .{home}),
         .cache_dir = try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}),
@@ -567,7 +526,7 @@ test "replaceSymlink refuses foreign executable path" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const home = try tmp.dir.realPathFileAlloc(io, ".", alloc);
-    const layout = try layout_mod.Layout.init(alloc, home, .{
+    const layout = try layout_mod.Layout.init(home, .{
         .bin = try std.fmt.allocPrint(alloc, "{s}/bin", .{home}),
         .opt = try std.fmt.allocPrint(alloc, "{s}/opt", .{home}),
         .cache_dir = try std.fmt.allocPrint(alloc, "{s}/.cache", .{home}),

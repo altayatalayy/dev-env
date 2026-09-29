@@ -4,14 +4,12 @@
 #
 # Output: ./build/releases/download/v${DEV_ENV_RELEASE:-0.1.0}/
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-if [ $? -ne 0 ]; then
+if ! SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"; then
     echo "failed to locate script directory" >&2
     exit 1
 fi
 
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
-if [ $? -ne 0 ]; then
+if ! REPO_ROOT="$(cd "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"; then
     echo "failed to locate repository root" >&2
     exit 1
 fi

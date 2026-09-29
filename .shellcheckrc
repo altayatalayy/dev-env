@@ -1,0 +1,3 @@
+# common.sh is sourced via a path computed at runtime, which shellcheck cannot
+# follow statically. Disable the "not following sourced file" info finding.
+disable=SC1091

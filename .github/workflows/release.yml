@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v (e.g. 0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+# zig-cli and zig-graph are declared as URL dependencies in build.zig.zon, so
+# `zig build` fetches them automatically; CI does not check them out.
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              version="${{ github.event.inputs.version }}"
+          else
+              version="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "${version}" ]; then
+              echo "could not resolve release version" >&2
+              exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build release artifacts
+        env:
+          DEV_ENV_RELEASE: ${{ steps.version.outputs.version }}
+        run: release/build.sh
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          assets_dir="build/releases/download/${tag}"
+          if [ ! -d "${assets_dir}" ]; then
+              echo "missing release assets: ${assets_dir}" >&2
+              exit 1
+          fi
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+              gh release create "${tag}" --title "${tag}" --generate-notes
+          fi
+          gh release upload "${tag}" "${assets_dir}"/* --clobber

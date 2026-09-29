@@ -70,7 +70,6 @@ pub fn applyOutcome(
             .layout = lock.install_layout,
             .tools = lock.resolved_tools,
             .install = diff.install_tools,
-            .deactivate = &.{},
         });
         try merged_tools.appendSlice(alloc, response.tools);
     }
@@ -292,7 +291,19 @@ fn applyConfigs(
         for (refresh.skipped_packages) |package| try skipped.append(alloc, package);
     }
 
-    const links = try configs.syncStowSource(alloc, io, paths, lock.installer_release, to_stow.items);
+    // Packages that must stay linked from stow-source, which is a superset of
+    // the ones being restowed: a skipped package that is already stowed keeps
+    // its entry, or the links the skip policy promised to preserve would be
+    // left dangling in $HOME.
+    var keep_linked: std.ArrayList([]const u8) = .empty;
+    try keep_linked.appendSlice(alloc, to_stow.items);
+    for (skipped.items) |package| {
+        const link = try paths.stowPackageLink(alloc, package);
+        std.Io.Dir.accessAbsolute(io, link, .{}) catch continue;
+        try keep_linked.append(alloc, package);
+    }
+
+    const links = try configs.syncStowSource(alloc, io, paths, lock.installer_release, keep_linked.items);
     try stow.run(alloc, io, paths.stow_source, paths.home, .restow, to_stow.items);
     const stowed_configs = try configsForPackages(alloc, plan, to_stow.items);
     if (stowed_configs.len > 0) {
@@ -310,8 +321,11 @@ fn applyConfigs(
         try skipped_configs.append(alloc, try configForPackage(plan, package));
     }
 
+    // A skipped-but-still-stowed package is reported as stowed so the receipt
+    // matches reality: uninstall must unstow it, and the next plan must not
+    // keep re-adding it and skipping it forever.
     return .{
-        .stowed = to_stow.items,
+        .stowed = keep_linked.items,
         .skipped_configs = skipped_configs.items,
         .stow_links = links,
     };

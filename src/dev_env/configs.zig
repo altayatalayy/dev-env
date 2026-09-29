@@ -233,8 +233,6 @@ pub const RefreshOutcome = struct {
     backed_up: []const []const u8 = &.{},
 };
 
-pub const RefreshError = error{ModifiedConfig};
-
 /// Reconciles the extracted dotfiles tree for `release` with a freshly
 /// extracted copy at `fresh_path`. A difference means the user modified a
 /// dev-env-managed config; the conflict policy decides what happens.

@@ -74,23 +74,14 @@ pub fn validate(alloc: std.mem.Allocator, defs: Defs) ValidateError!void {
     // one a package manager selects) and a config must belong to its tool.
     for (defs.tools) |t| {
         for (t.methods) |m| {
-            for (installToolDependencies(m.method)) |dep| {
-                if (dep == t.id) return error.SelfDependency;
-                if (defs.tool(dep) == null) return error.UnknownDependency;
-            }
-            for (runtimeToolDependencies(m.method)) |dep| {
-                if (dep == t.id) return error.SelfDependency;
-                if (defs.tool(dep) == null) return error.UnknownDependency;
-            }
+            const dependencies = m.method.dependencies();
+            try validateToolDependencies(defs, t.id, dependencies.install.tools);
+            try validateToolDependencies(defs, t.id, dependencies.runtime.tools);
         }
         for (t.configs) |c| {
             if (c.for_tool != t.id) return error.UnknownDependency;
-            for (c.install_dependencies.tools) |dep| {
-                if (defs.tool(dep) == null) return error.UnknownDependency;
-            }
-            for (c.runtime_dependencies.tools) |dep| {
-                if (defs.tool(dep) == null) return error.UnknownDependency;
-            }
+            try validateToolDependencies(defs, null, c.install_dependencies.tools);
+            try validateToolDependencies(defs, null, c.runtime_dependencies.tools);
             for (c.config_dependencies) |dep| {
                 if (dep == c.id) return error.SelfDependency;
                 if (defs.config(dep) == null) return error.UnknownDependency;
@@ -98,14 +89,8 @@ pub fn validate(alloc: std.mem.Allocator, defs: Defs) ValidateError!void {
         }
     }
 
-    var config_graph = ConfigDag.init(alloc);
+    var config_graph = try initEnumGraph(ConfigDag, tools.ConfigId, alloc);
     defer config_graph.deinit();
-    for (std.enums.values(tools.ConfigId)) |id| {
-        config_graph.addNode(.{ .id = @intFromEnum(id) }) catch |err| switch (err) {
-            error.DuplicateNodeId => unreachable, // enum values are unique
-            error.OutOfMemory => return error.OutOfMemory,
-        };
-    }
     for (defs.tools) |t| {
         for (t.configs) |c| {
             for (c.config_dependencies) |dep| {
@@ -120,32 +105,54 @@ pub fn validate(alloc: std.mem.Allocator, defs: Defs) ValidateError!void {
     }
 
     for (std.enums.values(platform.PackageManager.Kind)) |manager| {
-        var tool_graph = ToolDag.init(alloc);
+        var tool_graph = try initEnumGraph(ToolDag, tools.ToolId, alloc);
         defer tool_graph.deinit();
-        for (std.enums.values(tools.ToolId)) |id| {
-            tool_graph.addNode(.{ .id = @intFromEnum(id) }) catch |err| switch (err) {
-                error.DuplicateNodeId => unreachable, // enum values are unique
-                error.OutOfMemory => return error.OutOfMemory,
-            };
-        }
         for (defs.tools) |t| {
             const method = t.methodForManager(manager) orelse continue;
-            for (installToolDependencies(method.method)) |dep| {
-                try addDependencyEdge(
-                    ToolDag,
-                    &tool_graph,
-                    @intFromEnum(dep),
-                    @intFromEnum(t.id),
-                );
-            }
-            for (runtimeToolDependencies(method.method)) |dep| {
-                try addDependencyEdge(
-                    ToolDag,
-                    &tool_graph,
-                    @intFromEnum(dep),
-                    @intFromEnum(t.id),
-                );
-            }
+            try addMethodEdges(&tool_graph, t.id, method.method, false);
+        }
+    }
+}
+
+fn validateToolDependencies(
+    defs: Defs,
+    owner: ?tools.ToolId,
+    dependencies: []const tools.ToolId,
+) GraphError!void {
+    for (dependencies) |dep| {
+        if (dep == owner) return error.SelfDependency;
+        if (defs.tool(dep) == null) return error.UnknownDependency;
+    }
+}
+
+fn initEnumGraph(
+    comptime Graph: type,
+    comptime Id: type,
+    alloc: std.mem.Allocator,
+) ValidateError!Graph {
+    var graph = Graph.init(alloc);
+    errdefer graph.deinit();
+    for (std.enums.values(Id)) |id| {
+        graph.addNode(.{ .id = @intFromEnum(id) }) catch |err| switch (err) {
+            error.DuplicateNodeId => unreachable,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+    }
+    return graph;
+}
+
+fn addMethodEdges(
+    graph: *ToolDag,
+    tool: tools.ToolId,
+    method: tools.Method,
+    requested_only: bool,
+) ValidateError!void {
+    const dependencies = method.dependencies();
+    for ([_]tools.Dependencies{ dependencies.install, dependencies.runtime }) |phase| {
+        for (phase.tools) |dep| {
+            const dep_id: ToolDag.NodeId = @intFromEnum(dep);
+            if (requested_only and graph.node(dep_id) == null) continue;
+            try addDependencyEdge(ToolDag, graph, dep_id, @intFromEnum(tool));
         }
     }
 }
@@ -222,14 +229,15 @@ pub fn resolve(
         for (defs.tools) |t| {
             if (!tool_set.contains(t.id)) continue;
             const method = t.method(host) orelse return error.UnsupportedPlatform;
-            for (installToolDependencies(method.method)) |dep| {
+            const dependencies = method.method.dependencies();
+            for (dependencies.install.tools) |dep| {
                 if (!tool_set.contains(dep)) {
                     tool_set.insert(dep);
                     changed = true;
                 }
             }
             if (include_runtime_dependencies) {
-                for (runtimeToolDependencies(method.method)) |dep| {
+                for (dependencies.runtime.tools) |dep| {
                     if (!tool_set.contains(dep)) {
                         tool_set.insert(dep);
                         changed = true;
@@ -280,16 +288,7 @@ pub fn installOrder(
     for (names) |name| {
         const id = try toolByName(defs, name);
         const method = defs.tool(id).?.method(host) orelse return error.UnsupportedPlatform;
-        for (installToolDependencies(method.method)) |dep| {
-            const dep_id: ToolDag.NodeId = @intFromEnum(dep);
-            if (graph.node(dep_id) == null) continue;
-            try addDependencyEdge(ToolDag, &graph, dep_id, @intFromEnum(id));
-        }
-        for (runtimeToolDependencies(method.method)) |dep| {
-            const dep_id: ToolDag.NodeId = @intFromEnum(dep);
-            if (graph.node(dep_id) == null) continue;
-            try addDependencyEdge(ToolDag, &graph, dep_id, @intFromEnum(id));
-        }
+        try addMethodEdges(&graph, id, method.method, true);
     }
 
     const sorted = graph.topologicalSort() catch |err| switch (err) {
@@ -303,21 +302,6 @@ pub fn installOrder(
         out.* = @tagName(@as(tools.ToolId, @enumFromInt(id)));
     }
     return ordered;
-}
-
-fn installToolDependencies(method: tools.Method) []const tools.ToolId {
-    return switch (method) {
-        .source => |source| source.build_dependencies.tools,
-        .official => |official| official.install_dependencies.tools,
-        .archive, .system => &.{},
-    };
-}
-
-fn runtimeToolDependencies(method: tools.Method) []const tools.ToolId {
-    return switch (method) {
-        .source => |source| source.runtime_dependencies.tools,
-        .archive, .system, .official => &.{},
-    };
 }
 
 // --- tests ---

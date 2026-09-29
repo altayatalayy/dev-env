@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+
+      - name: Check formatting
+        run: zig fmt --check src build.zig
+
+      - name: Run unit tests
+        run: zig build test --summary all
+
+      - name: Build binaries
+        run: zig build
+
+      - name: Lint shell scripts
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+              sudo apt-get update && sudo apt-get install --yes shellcheck
+          fi
+          find install.sh release formal test/scripts test/e2e -name '*.sh' -print0 \
+              | xargs -0 shellcheck
+
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Lean
+        run: |
+          curl --fail --location --show-error --silent \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+              | sh -s -- -y --default-toolchain none
+
+      - name: Run proofs and models
+        run: formal/run.sh

@@ -35,10 +35,7 @@ pub fn resolveWithDefs(
 
     var selected: std.ArrayList(tools.ToolId) = .empty;
     for (req.tools) |name| {
-        const id = try resolver.toolByName(defs, name);
-        if (std.mem.indexOfScalar(tools.ToolId, selected.items, id) == null) {
-            try selected.append(alloc, id);
-        }
+        try selected.append(alloc, try resolver.toolByName(defs, name));
     }
 
     const res = try resolver.resolve(
@@ -59,6 +56,11 @@ pub fn resolveWithDefs(
         const method = def.method(req.platform) orelse return error.UnsupportedPlatform;
         const exports = try envExports(alloc, def.exports);
         try resolved_names.append(alloc, @tagName(id));
+        const dependencies = method.method.dependencies();
+        try packages.addDependencies(alloc, pm, dependencies.install);
+        if (req.include_runtime_dependencies) {
+            try packages.addDependencies(alloc, pm, dependencies.runtime);
+        }
 
         const action: proto.ToolAction = switch (method.method) {
             .archive => |a| .{
@@ -76,34 +78,25 @@ pub fn resolveWithDefs(
                     .env_exports = exports,
                 };
             },
-            .source => |s| blk: {
-                try packages.add(alloc, pm, s.build_dependencies.packages.forManager(pm));
-                if (req.include_runtime_dependencies) {
-                    try packages.add(alloc, pm, s.runtime_dependencies.packages.forManager(pm));
-                }
-                break :blk .{
-                    .tool = @tagName(id),
-                    .kind = .source,
-                    .version = s.version,
-                    .build_dependencies = .{
-                        .apt = s.build_dependencies.packages.apt,
-                        .dnf = s.build_dependencies.packages.dnf,
-                    },
-                    .env_exports = exports,
-                };
+            .source => |s| .{
+                .tool = @tagName(id),
+                .kind = .source,
+                .version = s.version,
+                .build_dependencies = .{
+                    .apt = s.build_dependencies.packages.apt,
+                    .dnf = s.build_dependencies.packages.dnf,
+                },
+                .env_exports = exports,
             },
-            .official => |o| blk: {
-                try packages.add(alloc, pm, o.install_dependencies.packages.forManager(pm));
-                break :blk .{
-                    .tool = @tagName(id),
-                    .kind = .official,
-                    .version = o.version,
-                    .build_dependencies = .{
-                        .apt = o.install_dependencies.packages.apt,
-                        .dnf = o.install_dependencies.packages.dnf,
-                    },
-                    .env_exports = exports,
-                };
+            .official => |o| .{
+                .tool = @tagName(id),
+                .kind = .official,
+                .version = o.version,
+                .build_dependencies = .{
+                    .apt = o.install_dependencies.packages.apt,
+                    .dnf = o.install_dependencies.packages.dnf,
+                },
+                .env_exports = exports,
             },
         };
         try actions.append(alloc, action);
@@ -115,9 +108,9 @@ pub fn resolveWithDefs(
         const def = defs.config(id).?;
         try resolved_configs.append(alloc, @tagName(id));
         try stow_packages.append(alloc, def.stow_package);
-        try packages.add(alloc, pm, def.install_dependencies.packages.forManager(pm));
+        try packages.addDependencies(alloc, pm, def.install_dependencies);
         if (req.include_runtime_dependencies) {
-            try packages.add(alloc, pm, def.runtime_dependencies.packages.forManager(pm));
+            try packages.addDependencies(alloc, pm, def.runtime_dependencies);
         }
         if (def.git_checkouts.len > 0) {
             try packages.add(alloc, pm, &.{"git"});
@@ -177,6 +170,15 @@ const PackageLists = struct {
         } else {
             try p.add(alloc, pm, system.packages);
         }
+    }
+
+    fn addDependencies(
+        p: *PackageLists,
+        alloc: std.mem.Allocator,
+        pm: platform.PackageManager,
+        dependencies: tools.Dependencies,
+    ) !void {
+        try p.add(alloc, pm, dependencies.packages.forManager(pm));
     }
 };
 

@@ -74,7 +74,7 @@ pub fn run(
         }
     } else |_| {}
 
-    for ([_][]const u8{ paths.releases, paths.stow_source, paths.installers, paths.launcher }) |dir| {
+    for ([_][]const u8{ paths.releases, paths.stow_source, paths.installers, paths.launchers }) |dir| {
         cwd.deleteTree(io, dir) catch {};
     }
     for ([_][]const u8{ paths.lock, paths.installed }) |file| {

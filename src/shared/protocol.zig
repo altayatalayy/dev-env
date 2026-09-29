@@ -12,7 +12,13 @@ const platform = @import("platform.zig");
 const json = @import("json.zig");
 const std = @import("std");
 
-pub const version: u32 = 1;
+/// Bumped whenever a request or response struct changes shape. Parsing is
+/// strict (unknown fields are errors), so there is no forward compatibility
+/// within a version and no negotiation: an installer that reports a different
+/// protocol is simply never selected.
+///
+/// 2: dropped the unused `ApplyRequest.deactivate` field.
+pub const version: u32 = 2;
 
 /// Installer argv subcommands.
 pub const Command = enum {
@@ -64,17 +70,11 @@ pub const LineHeader = struct {
 pub fn parseRequest(
     comptime Request: type,
     alloc: std.mem.Allocator,
-    command: Command,
     input: []const u8,
 ) !Request {
     const req = try json.parse(Request, alloc, input);
-    try validateRequest(command, req.protocol);
+    if (req.protocol != version) return error.UnsupportedProtocol;
     return req;
-}
-
-pub fn validateRequest(command: Command, requested: u32) error{UnsupportedProtocol}!void {
-    _ = command;
-    if (requested != version) return error.UnsupportedProtocol;
 }
 
 pub fn parseLineHeader(alloc: std.mem.Allocator, line: []const u8) !LineHeader {
@@ -261,9 +261,6 @@ pub const ApplyRequest = struct {
     tools: []const []const u8,
     /// Tools to install/activate; a subset of `tools`.
     install: []const []const u8,
-    /// Legacy apply-time link deactivation. Normal plan removals call the
-    /// installer's `uninstall` command so release-owned tool files are removed.
-    deactivate: []const []const u8,
 };
 
 pub const InstalledTool = struct {
@@ -387,7 +384,7 @@ test "protocol version mismatch is rejected" {
             \\{"protocol":999,"kind":"response","command":"extract-dotfiles","response":{"packages":[]}}
         ),
     );
-    try testing.expectError(error.UnsupportedProtocol, parseRequest(ResolveRequest, alloc, .resolve,
+    try testing.expectError(error.UnsupportedProtocol, parseRequest(ResolveRequest, alloc,
         \\{"protocol":999,"platform":{"ubuntu":{"version":"24.04","arch":"x86_64"}},"tools":[],"include_configs":true}
     ));
 }

@@ -59,6 +59,12 @@ pub fn discover(alloc: std.mem.Allocator, io: std.Io, paths: paths_mod.Paths) ![
     while (try it.next(io)) |entry| {
         if (entry.kind != .directory) continue;
         const release = try alloc.dupe(u8, entry.name);
+        // Release ids are ordered by newestCompatible, so an unparseable one
+        // would otherwise fail every command instead of just being ignored.
+        _ = version.Version.parse(release) catch {
+            std.log.warn("skipping installer {s}: not a x.y.z release id", .{release});
+            continue;
+        };
         const bin_path = try paths.installerBin(alloc, release);
         std.Io.Dir.accessAbsolute(io, bin_path, .{}) catch continue;
 

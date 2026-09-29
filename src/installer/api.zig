@@ -16,17 +16,14 @@ const progress_mod = @import("progress.zig");
 
 pub const Env = struct {
     home: []const u8,
-    cache_dir: []const u8,
     environ_map: *std.process.Environ.Map,
 
     fn toApplyEnv(
         env: Env,
-        alloc: std.mem.Allocator,
         requested: proto.InstallLayout,
     ) !apply_mod.Env {
-        _ = env.cache_dir;
         return .{
-            .layout = try layout_mod.Layout.init(alloc, env.home, requested),
+            .layout = try layout_mod.Layout.init(env.home, requested),
             .environ_map = env.environ_map,
         };
     }
@@ -86,7 +83,7 @@ pub fn apply(
     req: proto.ApplyRequest,
 ) !proto.ApplyResponse {
     try checkPlatform(req.platform);
-    return apply_mod.apply(alloc, io, try env.toApplyEnv(alloc, req.layout), progress, req);
+    return apply_mod.apply(alloc, io, try env.toApplyEnv(req.layout), progress, req);
 }
 
 pub fn verify(
@@ -97,7 +94,7 @@ pub fn verify(
     req: proto.VerifyRequest,
 ) !proto.VerifyResponse {
     try checkPlatform(req.platform);
-    return verify_mod.verify(alloc, io, try env.toApplyEnv(alloc, req.layout), progress, req);
+    return verify_mod.verify(alloc, io, try env.toApplyEnv(req.layout), progress, req);
 }
 
 pub fn applyConfigs(
@@ -108,7 +105,7 @@ pub fn applyConfigs(
     req: proto.ConfigApplyRequest,
 ) !proto.ConfigApplyResponse {
     try checkPlatform(req.platform);
-    return apply_mod.applyConfigs(alloc, io, try env.toApplyEnv(alloc, req.layout), progress, req);
+    return apply_mod.applyConfigs(alloc, io, try env.toApplyEnv(req.layout), progress, req);
 }
 
 pub fn uninstall(
@@ -119,7 +116,7 @@ pub fn uninstall(
     req: proto.UninstallRequest,
 ) !proto.UninstallResponse {
     try checkPlatform(req.platform);
-    return uninstall_mod.uninstall(alloc, io, try env.toApplyEnv(alloc, req.layout), progress, req);
+    return uninstall_mod.uninstall(alloc, io, try env.toApplyEnv(req.layout), progress, req);
 }
 
 pub fn extractDotfiles(
