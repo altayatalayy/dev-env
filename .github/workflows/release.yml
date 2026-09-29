@@ -16,7 +16,7 @@ permissions:
 # `zig build` fetches them automatically; CI does not check them out.
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Resolve version
         id: version

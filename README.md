@@ -6,8 +6,7 @@ versioned layout under `~/.local`.
 
 ## Install
 
-From GitHub Releases, after the first release is published (resolves the latest
-release automatically):
+From GitHub Releases (resolves the latest release automatically):
 
 ```sh
 curl --fail --location --show-error \
