@@ -38,6 +38,12 @@ dev-env upgrade                    # move to the newest installed release
 dev-env uninstall                  # remove tools and configs
 ```
 
+The managed Bash and Zsh startup files load `dev-env exports` when the shell
+config is selected. The default all-tools plan and a plan including Git or
+Neovim select it. Existing shell files are subject to the normal config
+conflict policy; use `--config-conflict=backup` if you want dev-env to back
+them up before stowing its versions.
+
 ## Build and test
 
 The `zig-cli` and `zig-graph` dependencies are pinned to GitHub commits in
@@ -101,5 +107,5 @@ formal/run.sh
 - [docs/state-model.md](docs/state-model.md) — state files, the diff, lifecycle invariants
 - [docs/resolution.md](docs/resolution.md) — dependency resolution and install methods
 - [docs/formal-verification.md](docs/formal-verification.md) — what is proved, and how to run it
-- [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) — current review findings
+- [docs/review.md](docs/review.md) — current review findings
 - [docs/CODING_GUIDELINES.md](docs/CODING_GUIDELINES.md) — style and review rules

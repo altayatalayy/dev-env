@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
         []const u8,
         "release",
         "Release id baked into dev-env-install",
-    ) orelse "0.1.0";
+    ) orelse "0.1.1";
     const dotfiles_dir = b.option(
         []const u8,
         "dotfiles-dir",

@@ -31,14 +31,14 @@ const common_platforms = [_]platform.Support{
     } },
 };
 
-const git_version = "2.54.0";
-const neovim_version = "0.12.1";
-const tmux_version = "3.5a";
-const go_version = "1.24.4";
+const git_version = "2.56.0";
+const neovim_version = "0.12.5";
+const tmux_version = "3.7c";
+const go_version = "1.27.1";
 const zig_version = "0.16.0";
 const rust_version = "stable";
 const docker_version = "official";
-const alacritty_version = "0.15.1";
+const alacritty_version = "0.17.0";
 
 const linux = [_]platform.PackageManager.Kind{ .apt, .dnf };
 
@@ -54,6 +54,11 @@ pub const tool_defs = [_]tools.ToolDef{
         .id = .git,
         .description = "Git built from source",
         .platforms = &common_platforms,
+        .configs = &.{.{
+            .id = .@"shell-config",
+            .for_tool = .git,
+            .stow_package = "shell",
+        }},
         .methods = &.{
             .{
                 .on = &linux,
@@ -186,12 +191,9 @@ pub const tool_defs = [_]tools.ToolDef{
                 .id = .@"neovim-config",
                 .for_tool = .neovim,
                 .stow_package = "nvim",
+                .config_dependencies = &.{.@"shell-config"},
                 .install_dependencies = .{
-                    .packages = .{
-                        .apt = &.{"git"},
-                        .dnf = &.{"git"},
-                        .brew = &.{"git"},
-                    },
+                    .tools = &.{.git},
                 },
                 .runtime_dependencies = .{
                     .tools = &.{.go},
@@ -222,9 +224,10 @@ pub const tool_defs = [_]tools.ToolDef{
                     .format = .tar_gz,
                     .strip_components = 1,
                     .build_dependencies = .{
+                        .tools = &.{.git},
                         .packages = .{
-                            .apt = &.{ "build-essential", "cmake", "curl", "gettext", "git", "ninja-build", "pkg-config", "unzip" },
-                            .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "git", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
+                            .apt = &.{ "build-essential", "cmake", "curl", "gettext", "ninja-build", "pkg-config", "unzip" },
+                            .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
                         },
                     },
                     .runtime_dependencies = .{

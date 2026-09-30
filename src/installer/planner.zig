@@ -345,16 +345,19 @@ test "release plan resolves config and toolchain dependencies" {
         .include_configs = true,
     });
 
-    // neovim-config -> go; Neovim's CMake source build uses system packages.
-    const expected_tools = [_][]const u8{ "go", "neovim" };
+    // Neovim's source build and plugin config use managed Git on Linux;
+    // its config also brings in Go.
+    const expected_tools = [_][]const u8{ "git", "go", "neovim" };
     try testing.expectEqual(expected_tools.len, resp.resolved_tools.len);
     for (expected_tools, resp.resolved_tools) |want, got| {
         try testing.expectEqualStrings(want, got);
     }
-    try testing.expectEqual(@as(usize, 1), resp.resolved_configs.len);
-    try testing.expectEqualStrings("neovim-config", resp.resolved_configs[0]);
+    try testing.expectEqual(@as(usize, 2), resp.resolved_configs.len);
+    try testing.expect(ids.contains(resp.resolved_configs, "neovim-config"));
+    try testing.expect(ids.contains(resp.resolved_configs, "shell-config"));
+    try testing.expect(ids.contains(resp.stow_packages, "shell"));
     try testing.expect(ids.contains(resp.system_packages.apt, "cmake"));
-    try testing.expect(ids.contains(resp.system_packages.apt, "git"));
+    try testing.expect(!ids.contains(resp.system_packages.apt, "git"));
 
     var found_neovim = false;
     for (resp.tool_actions) |action| {
@@ -405,11 +408,13 @@ test "release plan on macos uses brew only, with no build dependencies" {
     // formula/cask and rust is not pulled in for alacritty.
     try testing.expectEqual(@as(usize, 0), resp.system_packages.apt.len);
     try testing.expectEqual(@as(usize, 0), resp.system_packages.dnf.len);
+    try testing.expect(ids.contains(resp.system_packages.brew, "git"));
     try testing.expect(ids.contains(resp.system_packages.brew, "go"));
     try testing.expect(ids.contains(resp.system_packages.brew, "neovim"));
     try testing.expect(ids.contains(resp.system_packages.brew, "rust"));
     try testing.expect(ids.contains(resp.system_packages.brew_cask, "alacritty"));
     try testing.expect(!ids.contains(resp.system_packages.brew, "cmake"));
+    try testing.expect(ids.contains(resp.stow_packages, "shell"));
     for (resp.tool_actions) |action| {
         try testing.expectEqual(proto.ToolKind.system, action.kind);
         try testing.expectEqual(@as(usize, 0), action.build_dependencies.apt.len);
@@ -499,8 +504,10 @@ test "release plan excludes config runtime tools when runtime dependencies are d
     });
 
     try testing.expect(ids.contains(resp.resolved_tools, "neovim"));
+    try testing.expect(ids.contains(resp.resolved_tools, "git"));
     try testing.expect(!ids.contains(resp.resolved_tools, "go"));
-    try testing.expectEqualStrings("neovim-config", resp.resolved_configs[0]);
+    try testing.expect(ids.contains(resp.resolved_configs, "neovim-config"));
+    try testing.expect(ids.contains(resp.resolved_configs, "shell-config"));
 }
 
 test "release plan selects the docker method per platform" {
@@ -582,7 +589,8 @@ test "release plan includes git source build" {
     try testing.expectEqual(@as(usize, 1), resp.tool_actions.len);
     try testing.expectEqualStrings("git", resp.tool_actions[0].tool);
     try testing.expectEqual(proto.ToolKind.source, resp.tool_actions[0].kind);
-    try testing.expectEqualStrings("2.54.0", resp.tool_actions[0].version);
+    try testing.expectEqualStrings("2.56.0", resp.tool_actions[0].version);
+    try testing.expect(ids.contains(resp.stow_packages, "shell"));
     try testing.expect(ids.contains(resp.system_packages.apt, "libcurl4-gnutls-dev"));
     try testing.expect(ids.contains(resp.system_packages.apt, "dh-autoreconf"));
 }

@@ -2,7 +2,7 @@
 # Host-side release builder. Builds dev-env binaries on the host, then runs
 # distro/version/arch builders only for source-built tool archives.
 #
-# Output: ./build/releases/download/v${DEV_ENV_RELEASE:-0.1.0}/
+# Output: ./build/releases/download/v${DEV_ENV_RELEASE:-0.1.1}/
 
 if ! SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"; then
     echo "failed to locate script directory" >&2
@@ -15,7 +15,7 @@ if ! REPO_ROOT="$(cd "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"; then
 fi
 
 BUILD_DIR="${REPO_ROOT}/build"
-RELEASE="${DEV_ENV_RELEASE:-0.1.0}"
+RELEASE="${DEV_ENV_RELEASE:-0.1.1}"
 HOST_BIN_DIR="${BUILD_DIR}/host-bin"
 
 if ! mkdir --parents "${HOST_BIN_DIR}"; then

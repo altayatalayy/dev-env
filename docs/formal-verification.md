@@ -158,7 +158,7 @@ model useful as a design tool rather than just a checker:
 All invariants hold for every policy on the **crash-free** spec, and liveness
 holds there too: the current implementation is correct when nothing goes wrong.
 Both defects live strictly in the failure paths. See
-[CODE_REVIEW.md](CODE_REVIEW.md) for the counterexample traces and the proposed
+[review.md](review.md) for the counterexample and the proposed
 change.
 
 `MC_current.cfg` is expected to *fail* — it is the regression test for the

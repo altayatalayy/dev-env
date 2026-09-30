@@ -15,6 +15,7 @@ build/
 *.swo
 *~
 .DS_Store
+nvim.log
 
 # formal verification workspaces
 formal/lean/.lake/

@@ -4,7 +4,7 @@
 
 SOURCE_DIR="/src"
 BUILD_DIR="/build"
-RELEASE="${DEV_ENV_RELEASE:-0.1.0}"
+RELEASE="${DEV_ENV_RELEASE:-0.1.1}"
 RELEASE_DIR="${BUILD_DIR}/releases/download/v${RELEASE}"
 
 if ! mkdir --parents "${BUILD_DIR}/bin" "${RELEASE_DIR}"; then

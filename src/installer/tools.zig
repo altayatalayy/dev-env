@@ -24,6 +24,7 @@ pub const ToolId = enum {
 };
 
 pub const ConfigId = enum {
+    @"shell-config",
     @"neovim-config",
     @"tmux-config",
     @"alacritty-config",

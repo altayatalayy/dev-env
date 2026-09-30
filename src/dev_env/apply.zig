@@ -283,11 +283,13 @@ fn applyConfigs(
         timestamp,
     );
     if (refresh.skipped_packages.len > 0) {
-        var filtered: std.ArrayList([]const u8) = .empty;
+        var kept: usize = 0;
         for (to_stow.items) |package| {
-            if (!ids.contains(refresh.skipped_packages, package)) try filtered.append(alloc, package);
+            if (ids.contains(refresh.skipped_packages, package)) continue;
+            to_stow.items[kept] = package;
+            kept += 1;
         }
-        to_stow.items = filtered.items;
+        to_stow.items.len = kept;
         for (refresh.skipped_packages) |package| try skipped.append(alloc, package);
     }
 

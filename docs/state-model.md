@@ -161,4 +161,4 @@ These are the properties the design depends on. They are machine-checked in
    which the next `apply` still converges.
 
 Invariant 6 is the weakest one in the current implementation; see
-[CODE_REVIEW.md](CODE_REVIEW.md) for the gap the TLA+ model exposes.
+[review.md](review.md) for the gap the TLA+ model exposes.
