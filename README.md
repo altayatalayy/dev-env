@@ -67,10 +67,9 @@ against a protocol-compatible fake installer:
 test/scripts/test-container.sh
 ```
 
-Run selected targets or the heavier e2e suite that builds real tools:
+Run the heavier e2e suite that builds real tools:
 
 ```sh
-TEST_TARGETS="ubuntu-24.04-x86_64 fedora-44-x86_64" test/scripts/test-container.sh
 test/scripts/test-container.sh /opt/dev-env-test/e2e/release/run.sh
 ```
 
@@ -89,18 +88,8 @@ release/build.sh
 - `.github/workflows/release.yml` builds release artifacts and publishes them to
   GitHub Releases on a `v*` tag or manual dispatch.
 
-## Formal verification
-
-The generic Lean proofs and axiom audit are maintained in `dev-env-lib`.
-See [formal verification](docs/formal-verification.md) for their location
-and scope.
-
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — high-level design
-- [docs/protocol.md](docs/protocol.md) — the dev-env ↔ installer JSON protocol
-- [docs/state-model.md](docs/state-model.md) — state files, the diff, lifecycle invariants
-- [docs/resolution.md](docs/resolution.md) — dependency resolution and install methods
-- [docs/formal-verification.md](docs/formal-verification.md) — location and scope of the proofs
-- [docs/review.md](docs/review.md) — current review findings
-- [docs/CODING_GUIDELINES.md](docs/CODING_GUIDELINES.md) — style and review rules
+The generic architecture, protocol, resolution, state model, and Lean proofs
+are documented in [dev-env-lib](https://github.com/altayatalayy/dev-env-lib/tree/main/docs).
+The supported platform is Ubuntu 24.04.
