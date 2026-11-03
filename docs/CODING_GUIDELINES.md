@@ -18,7 +18,7 @@
 
 ## Zig
 
-- Target Zig 0.16 style and format code with `zig fmt`.
+- Target Zig 0.17 style and format code with `zig fmt`.
 - Prefer tagged unions when alternatives carry different data or behavior. Use
   enums for plain closed sets.
 - Use explicit error unions for expected failures.

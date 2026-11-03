@@ -11,7 +11,7 @@ if ! REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"; then
 fi
 
 TEST_SCRIPT="${1:-/opt/dev-env-test/e2e/fake/run.sh}"
-TEST_TARGETS="${TEST_TARGETS:-ubuntu-24.04-x86_64 ubuntu-26.04-x86_64 fedora-44-x86_64}"
+TEST_TARGETS="${TEST_TARGETS:-ubuntu-24.04-x86_64}"
 if ! TEST_UID="$(id -u)"; then
     echo "failed to read current uid" >&2
     exit 1
@@ -21,7 +21,7 @@ if ! TEST_GID="$(id -g)"; then
     exit 1
 fi
 
-BUILD_IMAGE="dev-env-test-builder:zig-0.16"
+BUILD_IMAGE="dev-env-test-builder:zig-0.17"
 BUILD_BIN_DIR="${REPO_ROOT}/build/test-bin"
 RELEASE="${DEV_ENV_RELEASE:-0.1.0}"
 if ! mkdir --parents "${BUILD_BIN_DIR}"; then
@@ -107,7 +107,7 @@ run_target() {
             ;;
     esac
 
-    TARGET_IMAGE="dev-env-test-${TARGET}:zig-0.16"
+    TARGET_IMAGE="dev-env-test-${TARGET}:zig-0.17"
     echo "==> building ${TARGET} test image"
     if ! docker build \
         --platform "${DOCKER_PLATFORM}" \

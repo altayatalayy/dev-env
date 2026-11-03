@@ -1,6 +1,6 @@
 # Dependency resolution and install methods
 
-All of this lives inside `dev-env-install` (`src/installer/`). `dev-env` sends a
+The implementation lives in `dev-env-lib/src/installer/`. `dev-env` sends a
 list of tool names and receives a fully resolved plan; it never reasons about
 dependencies itself.
 

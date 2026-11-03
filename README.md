@@ -46,21 +46,22 @@ them up before stowing its versions.
 
 ## Build and test
 
-The `zig-cli` and `zig-graph` dependencies are pinned to GitHub commits in
-`build.zig.zon`. Zig fetches and verifies them when building; no sibling
-checkouts are needed.
+The build uses a pinned `dev-env-lib` dependency from GitHub. The library
+provides the generic CLI and installer engine and pins `zig-cli` and
+`zig-graph`.
+This repository keeps its tool and configuration definitions in
+`src/installer/`, along with its dotfiles and environment tests.
 
-Build and run unit tests (requires Zig 0.16):
+Build and run unit tests (requires Zig 0.17):
 
 ```sh
 zig build
 zig build test --summary all
 ```
 
-Run the fast fake-installer e2e suite across the supported amd64 Linux targets
-(Ubuntu 24.04, Ubuntu 26.04, Fedora 44). This builds the Zig tests and native
-binaries once, then exercises the full dev-env lifecycle against a
-protocol-compatible fake installer:
+Run the fast fake-installer e2e suite on Ubuntu 24.04 amd64 by default. This
+builds the Zig tests and native binaries once, then exercises the lifecycle
+against a protocol-compatible fake installer:
 
 ```sh
 test/scripts/test-container.sh
@@ -88,17 +89,11 @@ release/build.sh
 - `.github/workflows/release.yml` builds release artifacts and publishes them to
   GitHub Releases on a `v*` tag or manual dispatch.
 
-Both workflows resolve `zig-cli` and `zig-graph` through `build.zig.zon`.
-
 ## Formal verification
 
-Core invariants are machine-checked: Lean 4 proofs for the ownership predicate,
-the set helpers, and the plan/apply diff; a TLA+ model of the apply/uninstall
-lifecycle under crash injection.
-
-```sh
-formal/run.sh
-```
+The generic Lean proofs and axiom audit are maintained in `dev-env-lib`.
+See [formal verification](docs/formal-verification.md) for their location
+and scope.
 
 ## Documentation
 
@@ -106,6 +101,6 @@ formal/run.sh
 - [docs/protocol.md](docs/protocol.md) — the dev-env ↔ installer JSON protocol
 - [docs/state-model.md](docs/state-model.md) — state files, the diff, lifecycle invariants
 - [docs/resolution.md](docs/resolution.md) — dependency resolution and install methods
-- [docs/formal-verification.md](docs/formal-verification.md) — what is proved, and how to run it
+- [docs/formal-verification.md](docs/formal-verification.md) — location and scope of the proofs
 - [docs/review.md](docs/review.md) — current review findings
 - [docs/CODING_GUIDELINES.md](docs/CODING_GUIDELINES.md) — style and review rules

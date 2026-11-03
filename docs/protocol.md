@@ -1,6 +1,6 @@
 # The dev-env ↔ installer protocol
 
-Defined in `src/shared/protocol.zig`. Current version: **1**.
+Defined in `dev-env-lib/src/shared/protocol.zig`. Current version: **2**.
 
 ## Transport
 
@@ -22,11 +22,11 @@ not understand.
 dev-env                                 dev-env-install
    │  spawn argv = [bin, "apply"]              │
    │─────────────────────────────────────────▶ │
-   │  {"protocol":1,"platform":…,"install":…}  │
+   │  {"protocol":2,"platform":…,"install":…}  │
    │─────────────────────────────────────────▶ │ (stdin closed)
-   │  {"protocol":1,"kind":"progress",…}       │
+   │  {"protocol":2,"kind":"progress",…}       │
    │ ◀─────────────────────────────────────────│
-   │  {"protocol":1,"kind":"response",…}       │
+   │  {"protocol":2,"kind":"response",…}       │
    │ ◀─────────────────────────────────────────│
    │  exit 0                                   │
 ```
@@ -63,11 +63,10 @@ protocol differs is invisible to `newestCompatible`, so a future release can
 raise the version without breaking an older `dev-env` — it simply will not be
 selected.
 
-The practical consequence: **any change to a request or response struct is a
-breaking change**, because `src/shared/json.zig` parses with unknown fields as
-errors. Adding an optional field with a default still breaks *older installers
-reading newer requests*. Bump `version` for anything but a purely additive
-response field.
+The practical consequence: changes to request or response structs can break
+compatibility because `dev-env-lib/src/shared/json.zig` rejects unknown fields.
+Adding an optional field still breaks an older peer that receives it. Bump the
+protocol version when the message shape changes.
 
 ## Names are strings at the boundary
 
@@ -109,8 +108,8 @@ control flow depends on it.
 
 `EnvExport` carries `{name, value, mode}` where `mode` is `set` or
 `prepend_path`. Values are `{home}`/`{opt}`/`{bin}`/`{cache_dir}`/`{prefix}`
-templates (see `src/shared/templates.zig`), rendered on whichever side needs a
-concrete path. They are stored *unrendered* in `installed.json` so relocating
+templates (see `dev-env-lib/src/shared/templates.zig`), rendered on whichever
+side needs a concrete path. They are stored *unrendered* in `installed.json` so relocating
 the layout does not invalidate the receipt, and rendered at `dev-env exports`
 time.
 

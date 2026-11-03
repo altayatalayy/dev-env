@@ -12,10 +12,22 @@ const build_options = @import("build_options");
 const std = @import("std");
 const shared = @import("shared");
 const platform = shared.platform;
-const tools = @import("tools.zig");
-const resolver = @import("resolver.zig");
+const tools = @import("installer_tools");
+const resolver = @import("installer_resolver");
 
 pub const name: []const u8 = build_options.release;
+
+const DotfilePackage = struct {
+    name: []const u8,
+    paths: []const []const u8,
+};
+
+pub const dotfile_packages = [_]DotfilePackage{
+    .{ .name = "alacritty", .paths = &.{".config/alacritty"} },
+    .{ .name = "nvim", .paths = &.{".config/nvim"} },
+    .{ .name = "shell", .paths = &.{ ".bashrc", ".zshenv" } },
+    .{ .name = "tmux", .paths = &.{".config/tmux"} },
+};
 
 const common_platforms = [_]platform.Support{
     .{ .ubuntu = .{

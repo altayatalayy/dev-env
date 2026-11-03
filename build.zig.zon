@@ -2,15 +2,11 @@
     .name = .dev_env,
     .version = "0.1.1",
     .fingerprint = 0x5354b8116f31ff68,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
-        .zig_cli = .{
-            .url = "git+https://github.com/altayatalayy/zig-cli.git#4dd9627d283fa4d541c3dd5e92a67ba41ed8efdc",
-            .hash = "zig_cli-0.1.0-ezGa--jrAABm088wEykJ1_lEv9559K7muedJOye38C2P",
-        },
-        .zig_graph = .{
-            .url = "git+https://github.com/altayatalayy/zig-graph.git#edb8e81b8cfe47cbd8e66ce3672f9874b86e7f49",
-            .hash = "zig_graph-0.1.0-ehSuii_zAAAK_eEVRIJdanXICvaFU1t7azxQffWcZiF6",
+        .dev_env_lib = .{
+            .url = "git+https://github.com/altayatalayy/dev-env-lib.git#b9ebf6b3ad0f532b3b4d23b2197701d238790d0e",
+            .hash = "dev_env_lib-0.1.1-sqTiiULDBADLGoPRlmspKIOHe2ezNMGacYLDJA9AcTE9",
         },
     },
     .paths = .{

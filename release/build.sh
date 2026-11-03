@@ -123,11 +123,11 @@ build_zig_target native linux x86_64
 # build_zig_target x86_64-macos macos x86_64
 # build_zig_target aarch64-macos macos aarch64
 
-# Linux source archives are distro/version/arch specific. Build all supported
-# Linux targets. Arm builders are disabled for now to keep release builds fast.
+# Linux source archives are distro/version/arch specific. Build Ubuntu 24.04
+# on x86_64 for now; the other supported targets can be enabled later.
 build_and_run ubuntu 24.04 linux/amd64 x86_64
 # build_and_run ubuntu 24.04 linux/arm64 aarch64
-build_and_run ubuntu 26.04 linux/amd64 x86_64
+# build_and_run ubuntu 26.04 linux/amd64 x86_64
 # build_and_run ubuntu 26.04 linux/arm64 aarch64
-build_and_run fedora 44 linux/amd64 x86_64
+# build_and_run fedora 44 linux/amd64 x86_64
 # build_and_run fedora 44 linux/arm64 aarch64

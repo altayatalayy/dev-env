@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-test:
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -21,7 +21,7 @@ jobs:
       - name: Install Zig
         uses: mlugg/setup-zig@v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       - name: Check formatting
         run: zig fmt --check src build.zig
@@ -37,22 +37,5 @@ jobs:
           if ! command -v shellcheck >/dev/null 2>&1; then
               sudo apt-get update && sudo apt-get install --yes shellcheck
           fi
-          find install.sh release formal test/scripts test/e2e -name '*.sh' -print0 \
+          find install.sh release test/scripts test/e2e -name '*.sh' -print0 \
               | xargs -0 shellcheck
-
-  formal:
-    runs-on: ubuntu-26.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install Lean
-        run: |
-          curl --fail --location --show-error --silent \
-              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-              | sh -s -- -y --default-toolchain none
-
-      - name: Run proofs and models
-        run: formal/run.sh

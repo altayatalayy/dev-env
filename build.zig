@@ -3,34 +3,34 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const release = b.option(
-        []const u8,
-        "release",
-        "Release id baked into dev-env-install",
-    ) orelse "0.1.1";
-    const dotfiles_dir = b.option(
-        []const u8,
-        "dotfiles-dir",
-        "Directory packed into dev-env-install as dotfiles",
-    ) orelse "dotfiles";
+    const release = b.option([]const u8, "release", "Release id") orelse "0.1.1";
+    const dotfiles_dir = b.option([]const u8, "dotfiles-dir", "Directory to embed") orelse "dotfiles";
 
-    const build_opts = b.addOptions();
-    build_opts.addOption([]const u8, "release", release);
-
-    const zig_cli = b.dependency("zig_cli", .{
+    const dep = b.dependency("dev_env_lib", .{ .target = target, .optimize = optimize });
+    const tools = dep.module("installer_tools");
+    const resolver = dep.module("installer_resolver");
+    const installer = dep.module("installer");
+    const ids = b.createModule(.{
+        .root_source_file = b.path("src/installer/environment_ids.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const cli_mod = zig_cli.module("cli");
+    tools.addImport("environment_ids", ids);
 
-    const zig_graph = b.dependency("zig_graph", .{
+    const options = b.addOptions();
+    options.addOption([]const u8, "release", release);
+    const catalog = b.createModule(.{
+        .root_source_file = b.path("src/installer/release.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const graph_mod = zig_graph.module("graph");
+    catalog.addImport("shared", dep.module("shared"));
+    catalog.addImport("installer_tools", tools);
+    catalog.addImport("installer_resolver", resolver);
+    catalog.addOptions("build_options", options);
+    installer.addImport("environment_release", catalog);
 
-    // Pack dotfiles/ into one zstd-compressed tar archive embedded in the installer.
-    const tar_cmd = b.addSystemCommand(&.{
+    const tar = b.addSystemCommand(&.{
         "tar",
         "--zstd",
         "--create",
@@ -42,55 +42,17 @@ pub fn build(b: *std.Build) void {
         "--mtime=@0",
         "--file",
     });
-    const dotfiles_archive = tar_cmd.addOutputFileArg("dotfiles.tar.zst");
-    tar_cmd.addPrefixedDirectoryArg("--directory=", b.path(dotfiles_dir));
-    tar_cmd.addArg(".");
+    const archive = tar.addOutputFileArg("dotfiles.tar.zst");
+    tar.addPrefixedDirectoryArg("--directory=", b.path(dotfiles_dir));
+    tar.addArg(".");
+    installer.addAnonymousImport("dotfiles_archive", .{ .root_source_file = archive });
+    b.installArtifact(b.addExecutable(.{ .name = "dev-env-install", .root_module = installer }));
+    b.installArtifact(dep.artifact("dev-env"));
 
-    const shared_mod = b.createModule(.{
-        .root_source_file = b.path("src/shared/shared.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const dev_env_mod = b.createModule(.{
-        .root_source_file = b.path("src/dev_env/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "shared", .module = shared_mod },
-            .{ .name = "cli", .module = cli_mod },
-        },
-    });
-
-    const installer_mod = b.createModule(.{
-        .root_source_file = b.path("src/installer/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "shared", .module = shared_mod },
-            .{ .name = "graph", .module = graph_mod },
-        },
-    });
-    installer_mod.addOptions("build_options", build_opts);
-    installer_mod.addAnonymousImport("dotfiles_archive", .{
-        .root_source_file = dotfiles_archive,
-    });
-
-    const dev_env_exe = b.addExecutable(.{
-        .name = "dev-env",
-        .root_module = dev_env_mod,
-    });
-    b.installArtifact(dev_env_exe);
-
-    const installer_exe = b.addExecutable(.{
-        .name = "dev-env-install",
-        .root_module = installer_mod,
-    });
-    b.installArtifact(installer_exe);
-
-    const test_step = b.step("test", "Run unit tests");
-    for ([_]*std.Build.Module{ shared_mod, dev_env_mod, installer_mod }) |mod| {
-        const unit_test = b.addTest(.{ .root_module = mod });
-        test_step.dependOn(&b.addRunArtifact(unit_test).step);
-    }
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = installer })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = tools })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = resolver })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = dep.module("shared") })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = dep.module("frontend") })).step);
 }

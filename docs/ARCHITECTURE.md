@@ -38,7 +38,7 @@ dotfiles tree embedded in its own binary. Multiple releases coexist under
 The split exists so that **upgrading the tool set is just installing another
 installer binary** — no change to the orchestrator, no migration of state.
 
-`src/shared/` holds only what genuinely crosses the boundary: the protocol
+`dev-env-lib/src/shared/` holds what crosses the boundary: the protocol
 types, the platform model, JSON helpers, template rendering, and version
 ordering.
 
