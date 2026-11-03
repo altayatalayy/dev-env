@@ -156,12 +156,24 @@ fi
 
 case "${OS}" in
     Linux) OS="linux" ;;
-    Darwin) OS="macos" ;;
     *)
         echo "unsupported operating system: ${OS}" >&2
         exit 1
         ;;
 esac
+
+if [ ! -r /etc/os-release ]; then
+    echo "cannot detect Ubuntu version: /etc/os-release is missing" >&2
+    exit 1
+fi
+if ! . /etc/os-release; then
+    echo "failed to read /etc/os-release" >&2
+    exit 1
+fi
+if [ "${ID:-}" != "ubuntu" ] || [ "${VERSION_ID:-}" != "24.04" ]; then
+    echo "unsupported operating system: Ubuntu 24.04 is required" >&2
+    exit 1
+fi
 
 case "${ARCH}" in
     x86_64|aarch64) ;;

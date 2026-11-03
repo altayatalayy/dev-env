@@ -88,17 +88,6 @@ build_and_run() {
             echo "builder image build failed: ${IMAGE}" >&2
             exit 1
         fi
-    elif [ "${DISTRO}" = "fedora" ]; then
-        if ! docker build \
-            --platform "${DOCKER_PLATFORM}" \
-            --file "${DOCKERFILE}" \
-            --build-arg "FEDORA_VERSION=${VERSION}" \
-            --build-arg "ZIG_ARCH=${ZIG_ARCH}" \
-            --tag "${IMAGE}" \
-            "${REPO_ROOT}"; then
-            echo "builder image build failed: ${IMAGE}" >&2
-            exit 1
-        fi
     else
         echo "unknown builder distro: ${DISTRO}" >&2
         exit 1
@@ -118,16 +107,5 @@ build_and_run() {
 
 build_zig_target native linux x86_64
 
-# Keep these host-side cross builds ready for release publishing once needed.
-# build_zig_target aarch64-linux linux aarch64
-# build_zig_target x86_64-macos macos x86_64
-# build_zig_target aarch64-macos macos aarch64
-
-# Linux source archives are distro/version/arch specific. Build Ubuntu 24.04
-# on x86_64 for now; the other supported targets can be enabled later.
+# Linux source archives are specific to the distribution and architecture.
 build_and_run ubuntu 24.04 linux/amd64 x86_64
-# build_and_run ubuntu 24.04 linux/arm64 aarch64
-# build_and_run ubuntu 26.04 linux/amd64 x86_64
-# build_and_run ubuntu 26.04 linux/arm64 aarch64
-# build_and_run fedora 44 linux/amd64 x86_64
-# build_and_run fedora 44 linux/arm64 aarch64

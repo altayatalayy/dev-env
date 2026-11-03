@@ -10,7 +10,7 @@ if ! REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"; then
     exit 1
 fi
 
-TEST_SCRIPT="${1:-/opt/dev-env-test/e2e/fake/run.sh}"
+TEST_SCRIPT="${1:-/opt/dev-env-lib-test/run.sh}"
 TEST_TARGETS="${TEST_TARGETS:-ubuntu-24.04-x86_64}"
 if ! TEST_UID="$(id -u)"; then
     echo "failed to read current uid" >&2
@@ -55,6 +55,7 @@ if ! docker run \
     "${BUILD_IMAGE}" \
     bash -c '
         zig build test || exit 1
+        zig build test-fixtures --prefix /out || exit 1
         for arch in ${DEV_ENV_TEST_ARCHES}; do
             case "${arch}" in
                 x86_64) zig_target=x86_64-linux-gnu ;;
@@ -97,15 +98,16 @@ run_target() {
             DOCKERFILE="${REPO_ROOT}/containers/test/Dockerfile.ubuntu"
             BUILD_ARGS=(--build-arg "UBUNTU_VERSION=${VERSION}")
             ;;
-        fedora)
-            DOCKERFILE="${REPO_ROOT}/containers/test/Dockerfile.fedora"
-            BUILD_ARGS=(--build-arg "FEDORA_VERSION=${VERSION}")
-            ;;
         *)
             echo "unsupported test target: ${TARGET}" >&2
             return 1
             ;;
     esac
+
+    if [ "${VERSION}" != "24.04" ]; then
+        echo "unsupported Ubuntu version: ${VERSION}" >&2
+        return 1
+    fi
 
     TARGET_IMAGE="dev-env-test-${TARGET}:zig-0.17"
     echo "==> building ${TARGET} test image"
@@ -128,6 +130,7 @@ run_target() {
         --tmpfs /tmp:exec \
         --volume "${BUILD_BIN_DIR}/${ARCH}:/opt/dev-env/bin:ro" \
         --volume "${REPO_ROOT}/test:/opt/dev-env-test:ro" \
+        --volume "${BUILD_BIN_DIR}/test/e2e/fake:/opt/dev-env-lib-test:ro" \
         --volume "${REPO_ROOT}/install.sh:/opt/dev-env-install.sh:ro" \
         --env "DEV_ENV_BIN_DIR=/opt/dev-env/bin" \
         --env "DEV_ENV_E2E_TESTS=${DEV_ENV_E2E_TESTS:-}" \

@@ -21,9 +21,6 @@ case "$(uname -s)" in
     Linux)
         OS="linux"
         ;;
-    Darwin)
-        OS="macos"
-        ;;
     *)
         echo "unsupported host operating system for release packaging" >&2
         exit 1

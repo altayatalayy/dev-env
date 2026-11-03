@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .dev_env_lib = .{
-            .url = "git+https://github.com/altayatalayy/dev-env-lib.git#b9ebf6b3ad0f532b3b4d23b2197701d238790d0e",
-            .hash = "dev_env_lib-0.1.1-sqTiiULDBADLGoPRlmspKIOHe2ezNMGacYLDJA9AcTE9",
+            .url = "git+https://github.com/altayatalayy/dev-env-lib.git#87d7f0bd5e8b1b95431a0296317f4b2a5e9f7703",
+            .hash = "dev_env_lib-0.1.1-sqTiiWogBQDtxdJYNxQTbupCizHetW4tQE1kwy28hirS",
         },
     },
     .paths = .{

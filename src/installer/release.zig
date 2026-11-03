@@ -2,11 +2,7 @@
 //! platforms and versions, and the dependency graph. This file is the only
 //! place release content changes.
 //!
-//! Per platform family the rule is:
-//! - apt/dnf (Linux): archives, source builds, and upstream official
-//!   installers; build dependencies come from the system package manager.
-//! - brew (macOS): plain formulas/casks only. brew resolves dependencies
-//!   itself, so no method declares brew build dependencies.
+//! Ubuntu 24.04 uses apt, archives, source builds, and upstream installers.
 
 const build_options = @import("build_options");
 const std = @import("std");
@@ -31,14 +27,7 @@ pub const dotfile_packages = [_]DotfilePackage{
 
 const common_platforms = [_]platform.Support{
     .{ .ubuntu = .{
-        .versions = &.{ "24.04", "26.04" },
-        .archs = &.{ .x86_64, .aarch64 },
-    } },
-    .{ .fedora = .{
-        .versions = &.{"44"},
-        .archs = &.{ .x86_64, .aarch64 },
-    } },
-    .{ .macos = .{
+        .versions = &.{"24.04"},
         .archs = &.{ .x86_64, .aarch64 },
     } },
 };
@@ -52,7 +41,7 @@ const rust_version = "stable";
 const docker_version = "official";
 const alacritty_version = "0.17.0";
 
-const linux = [_]platform.PackageManager.Kind{ .apt, .dnf };
+const linux = [_]platform.PackageManager.Kind{.apt};
 
 const parallel_make = "make -j\"$(nproc)\"";
 
@@ -82,7 +71,6 @@ pub const tool_defs = [_]tools.ToolDef{
                     .build_dependencies = .{
                         .packages = .{
                             .apt = &.{ "autoconf", "build-essential", "curl", "dh-autoreconf", "gettext", "libcurl4-gnutls-dev", "libexpat1-dev", "libssl-dev", "tcl", "unzip", "zlib1g-dev" },
-                            .dnf = &.{ "autoconf", "curl", "curl-devel", "expat-devel", "gcc", "gettext", "make", "openssl-devel", "perl-ExtUtils-MakeMaker", "zlib-devel" },
                         },
                     },
                     .build_steps = &.{
@@ -95,10 +83,6 @@ pub const tool_defs = [_]tools.ToolDef{
                         .{ .name = "git", .rel_path = "bin/git" },
                     },
                 } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"git"}, .check_bin = "git" } },
             },
         },
     },
@@ -119,10 +103,6 @@ pub const tool_defs = [_]tools.ToolDef{
                         .{ .name = "zig", .rel_path = "zig" },
                     },
                 } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"zig"}, .check_bin = "zig" } },
             },
         },
     },
@@ -149,10 +129,6 @@ pub const tool_defs = [_]tools.ToolDef{
                     },
                 } },
             },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"go"}, .check_bin = "go" } },
-            },
         },
     },
     .{
@@ -172,7 +148,6 @@ pub const tool_defs = [_]tools.ToolDef{
                     .install_dependencies = .{
                         .packages = .{
                             .apt = &.{ "build-essential", "ca-certificates", "curl", "libssl-dev", "pkg-config" },
-                            .dnf = &.{ "ca-certificates", "curl", "gcc", "openssl-devel", "pkgconf-pkg-config" },
                         },
                     },
                     .install_steps = &.{
@@ -187,10 +162,6 @@ pub const tool_defs = [_]tools.ToolDef{
                     },
                     .verify_bins = &.{ "rustup", "cargo", "rustc" },
                 } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"rust"}, .check_bin = "cargo" } },
             },
         },
     },
@@ -239,13 +210,11 @@ pub const tool_defs = [_]tools.ToolDef{
                         .tools = &.{.git},
                         .packages = .{
                             .apt = &.{ "build-essential", "cmake", "curl", "gettext", "ninja-build", "pkg-config", "unzip" },
-                            .dnf = &.{ "cmake", "curl", "gcc", "gcc-c++", "gettext", "make", "ninja-build", "pkgconf-pkg-config", "unzip" },
                         },
                     },
                     .runtime_dependencies = .{
                         .packages = .{
                             .apt = &.{"gettext"},
-                            .dnf = &.{"gettext"},
                         },
                     },
                     .build_steps = &.{
@@ -256,10 +225,6 @@ pub const tool_defs = [_]tools.ToolDef{
                         .{ .name = "nvim", .rel_path = "bin/nvim" },
                     },
                 } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"neovim"}, .check_bin = "nvim" } },
             },
         },
     },
@@ -298,13 +263,11 @@ pub const tool_defs = [_]tools.ToolDef{
                     .build_dependencies = .{
                         .packages = .{
                             .apt = &.{ "automake", "bison", "build-essential", "libevent-dev", "libncurses-dev", "pkg-config" },
-                            .dnf = &.{ "automake", "bison", "gcc", "libevent-devel", "make", "ncurses-devel", "pkgconf-pkg-config" },
                         },
                     },
                     .runtime_dependencies = .{
                         .packages = .{
                             .apt = &.{ "libevent-2.1-7t64", "libncurses6" },
-                            .dnf = &.{ "libevent", "ncurses-libs" },
                         },
                     },
                     .build_steps = &.{
@@ -316,10 +279,6 @@ pub const tool_defs = [_]tools.ToolDef{
                         .{ .name = "tmux", .rel_path = "bin/tmux" },
                     },
                 } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"tmux"}, .check_bin = "tmux" } },
             },
         },
     },
@@ -369,39 +328,6 @@ pub const tool_defs = [_]tools.ToolDef{
                     .verify_bins = &.{"docker"},
                 } },
             },
-            .{
-                .on = &.{.dnf},
-                .method = .{ .official = .{
-                    .version = docker_version,
-                    .install_dependencies = .{
-                        .packages = .{
-                            .dnf = &.{"dnf-plugins-core"},
-                        },
-                    },
-                    .repositories = &.{
-                        .{ .dnf = .{
-                            .url = "https://download.docker.com/linux/fedora/docker-ce.repo",
-                        } },
-                    },
-                    .packages = &.{
-                        "docker-ce",
-                        "docker-ce-cli",
-                        "containerd.io",
-                        "docker-buildx-plugin",
-                        "docker-compose-plugin",
-                    },
-                    .install_steps = &.{
-                        .{ .name = "add user to docker group", .argv = &.{
-                            "sh", "-c", add_user_to_docker_group,
-                        } },
-                    },
-                    .verify_bins = &.{"docker"},
-                } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"docker"}, .cask = true, .check_bin = "docker" } },
-            },
         },
     },
     .{
@@ -416,7 +342,6 @@ pub const tool_defs = [_]tools.ToolDef{
                 .install_dependencies = .{
                     .packages = .{
                         .apt = &.{ "desktop-file-utils", "ncurses-bin" },
-                        .dnf = &.{ "desktop-file-utils", "ncurses" },
                     },
                 },
                 .install_steps = &.{
@@ -449,13 +374,11 @@ pub const tool_defs = [_]tools.ToolDef{
                         .tools = &.{.rust},
                         .packages = .{
                             .apt = &.{ "cmake", "g++", "gzip", "libfontconfig1-dev", "libfreetype6-dev", "libxcb-xfixes0-dev", "libxkbcommon-dev", "pkg-config", "python3", "scdoc" },
-                            .dnf = &.{ "cmake", "fontconfig-devel", "freetype-devel", "gcc-c++", "gzip", "libxcb-devel", "libxkbcommon-devel", "pkgconf-pkg-config", "python3", "scdoc" },
                         },
                     },
                     .runtime_dependencies = .{
                         .packages = .{
                             .apt = &.{ "libfontconfig1", "libfreetype6", "libxcb-xfixes0", "libxkbcommon0" },
-                            .dnf = &.{ "fontconfig", "freetype", "libxcb", "libxkbcommon" },
                         },
                     },
                     .build_steps = &.{
@@ -469,10 +392,6 @@ pub const tool_defs = [_]tools.ToolDef{
                         .{ .name = "alacritty", .rel_path = "bin/alacritty" },
                     },
                 } },
-            },
-            .{
-                .on = &.{.brew},
-                .method = .{ .system = .{ .packages = &.{"alacritty"}, .cask = true, .check_bin = "alacritty" } },
             },
         },
     },

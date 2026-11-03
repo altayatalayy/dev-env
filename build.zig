@@ -49,6 +49,14 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(b.addExecutable(.{ .name = "dev-env-install", .root_module = installer }));
     b.installArtifact(dep.artifact("dev-env"));
 
+    const test_fixtures = b.addInstallDirectory(.{
+        .source_dir = dep.path("test/e2e/fake"),
+        .install_dir = .prefix,
+        .install_subdir = "test/e2e/fake",
+    });
+    const test_fixtures_step = b.step("test-fixtures", "Install generic integration test fixtures");
+    test_fixtures_step.dependOn(&test_fixtures.step);
+
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = installer })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = tools })).step);

@@ -5,7 +5,7 @@ if ! SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)";
     exit 1
 fi
 
-if ! . "${SCRIPT_DIR}/../fake/common.sh"; then
+if ! . "${SCRIPT_DIR}/common.sh"; then
     echo "failed to load test helpers" >&2
     exit 1
 fi

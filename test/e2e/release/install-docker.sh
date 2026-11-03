@@ -25,14 +25,4 @@ case "${DEV_ENV_TEST_TARGET:-}" in
             exit 1
         fi
         ;;
-    fedora-*)
-        if ! grep --quiet 'download.docker.com/linux/fedora' /etc/yum.repos.d/docker-ce.repo; then
-            echo "docker dnf repository was not configured" >&2
-            exit 1
-        fi
-        if ! rpm --query docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null; then
-            echo "docker dnf packages were not installed" >&2
-            exit 1
-        fi
-        ;;
 esac
